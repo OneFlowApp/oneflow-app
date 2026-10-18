@@ -51,6 +51,7 @@ const DISCIPLINE_SLUGS = new Set([
   "beginner_sculpt",
   "event",
   "pilates",
+  "reformer",
 ]);
 
 const DISCIPLINE_LABEL_TO_SLUG: Record<string, string> = {
@@ -66,6 +67,7 @@ const DISCIPLINE_LABEL_TO_SLUG: Record<string, string> = {
   "beginner sculpt": "beginner_sculpt",
   event: "event",
   pilates: "pilates",
+  reformer: "reformer",
 };
 
 function normalizeDisciplines(raw: unknown): string[] {

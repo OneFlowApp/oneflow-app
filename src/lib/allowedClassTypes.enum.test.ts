@@ -26,6 +26,7 @@ const DOCUMENTED_DB_CLASS_TYPE_ENUM = [
   "beginner",
   "beginner_sculpt",
   "pilates",
+  "reformer",
 ] as const;
 
 function sorted(xs: readonly string[]): string[] {

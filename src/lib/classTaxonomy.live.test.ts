@@ -31,6 +31,7 @@ const DOCUMENTED_DB_CLASS_TYPE_ENUM = [
   "beginner",
   "beginner_sculpt",
   "pilates",
+  "reformer",
 ] as const;
 
 type Taxonomy = {
