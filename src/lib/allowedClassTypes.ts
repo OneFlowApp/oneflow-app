@@ -30,6 +30,7 @@ export const ALLOWED_CLASS_TYPE_SLUGS = [
   "beginner",
   "beginner_sculpt",
   "event",
+  "reformer",
 ] as const;
 
 export type AllowedClassTypeSlug = (typeof ALLOWED_CLASS_TYPE_SLUGS)[number];
@@ -41,6 +42,7 @@ export const CLASS_CATEGORY_SLUGS = [
   "pilates",
   "wellzone",
   "event",
+  "reformer",
 ] as const;
 
 export type ClassCategorySlug = (typeof CLASS_CATEGORY_SLUGS)[number];
@@ -62,6 +64,7 @@ export const CLASS_TYPE_SLUG_LABEL: Record<string, string> = {
   beginner: "Beginner",
   beginner_sculpt: "Beginner sculpt",
   event: "Event",
+  reformer: "Reformer",
 };
 
 /**
@@ -136,6 +139,7 @@ const CATEGORY_BY_SLUG: Record<string, string> = {
   beginner: "yoga",
   beginner_sculpt: "sculpt",
   event: "event",
+  reformer: "reformer",
 };
 
 export type ClassTypeTheme = {
@@ -175,6 +179,7 @@ const ENUM_CLASS_TYPE_THEME = {
   beginner: { accent: "#8fa67d", tint: "bg-[#f7faf4]", tintBg: "" },
   beginner_sculpt: { accent: "#e8a54b", tint: "bg-[#fff8ed]", tintBg: "" },
   event: { accent: "#9333ea", tint: "bg-purple-50", tintBg: "" },
+  reformer: { accent: "#b45309", tint: "bg-amber-50", tintBg: "" },
 } as const satisfies Record<AllowedClassTypeSlug, ClassTypeTheme>;
 
 /**
