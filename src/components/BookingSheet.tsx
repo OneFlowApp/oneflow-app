@@ -409,29 +409,17 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
         error
           ? error.code === "23505"
             ? "You already have an active booking for this class."
-            : bookingCreditInsertErrorMessage(
-                error,
-                supabaseErrorMessage(error, "Could not complete booking"),
-              )
+            : !selectedCredit && error.message?.trim()
+              ? // Flow Points are deducted by the database on insert; surface its message as-is
+                error.message.trim()
+              : bookingCreditInsertErrorMessage(
+                  error,
+                  supabaseErrorMessage(error, "Could not complete booking"),
+                )
           : "Booking failed — no row returned. This is often RLS or a missing database field.",
       );
       setLoading(false);
       return;
-    }
-
-    if (usePoints && !selectedCredit) {
-      const used = Math.min(flowPoints, 100);
-      const { error: redeemErr } = await supabase.rpc("redeem_my_flow_points", {
-        p_amount: used,
-      });
-      if (redeemErr) {
-        console.error("[BookingSheet] flow points redeem failed", redeemErr);
-        // Roll back the booking so the member isn't booked without paying
-        await supabase.from("bookings").delete().eq("id", booking.id);
-        toast.error("Could not redeem Flow Points — please try again.");
-        setLoading(false);
-        return;
-      }
     }
 
     await afterBookingConfirmed(booking.id as string);
