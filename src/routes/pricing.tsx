@@ -10,8 +10,6 @@ import {
   maxPackFlowPointsRedemption,
   parseFlowPointsConversionRate,
 } from "@/lib/flowPointsRedemption";
-import { buildProductCreditRows } from "@/lib/multiCreditProducts";
-import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
 import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
 import { cn } from "@/lib/utils";
 
@@ -272,36 +270,12 @@ function PricingPage() {
     const price = Number(product.price_zar ?? 0);
     if (price === 0) {
       setBuyingId(packId);
-      const validityDays = product.validity_days ?? 30;
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + validityDays);
-      const purchasedAt = new Date().toISOString();
-      const rawCount =
-        typeof product.credit_count === "number"
-          ? product.credit_count
-          : Number(product.credit_count ?? 1);
-      const isUnlimited = Number.isFinite(rawCount) && rawCount >= 999;
-      const total = isUnlimited ? rawCount : Math.trunc(rawCount || 1);
-      const category = product.category ?? "yoga";
-      const creditRows = buildProductCreditRows({
-        productName: product.name,
-        profileId: user.id,
-        productId: product.id,
-        expiresAt: expiresAt.toISOString(),
-        paymentId: "free_intro",
-        purchasedAt,
-        category,
-        allowedClassTypes: product.allowed_class_types?.length
-          ? product.allowed_class_types
-          : [...defaultAllowedClassTypesForCreditCategory(category)],
-        creditsTotal: total,
-        creditsRemaining: total,
-        isUnlimited,
+      const { error } = await supabase.rpc("claim_free_product", {
+        p_product_id: product.id,
       });
-      const { error } = await supabase.from("user_credits").insert(creditRows);
       setBuyingId(null);
       if (error) {
-        console.error("[pricing] free product credit insert failed", error);
+        console.error("[pricing] free product claim failed", error);
         toast.error(supabaseErrorMessage(error, "Could not claim free class"));
         return;
       }
