@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapPin, Clock } from "lucide-react";
+import { MapPin, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { BookingSheet } from "@/components/BookingSheet";
@@ -207,6 +207,21 @@ export default function SchedulePage() {
     setSelectedDateKey((k) => civilAddDaysYmd(k, 1));
   }, []);
 
+  const goNextWeek = useCallback(() => {
+    setDaySlide("from-right");
+    setSelectedDateKey((k) => civilAddDaysYmd(k, 7));
+  }, []);
+
+  /** Back one week, but never before the studio's today. */
+  const goPrevWeek = useCallback(() => {
+    const studioToday = todayDateKey(studioTimeZone);
+    setDaySlide("from-left");
+    setSelectedDateKey((k) => {
+      const back = civilAddDaysYmd(k, -7);
+      return back < studioToday ? studioToday : back;
+    });
+  }, [studioTimeZone]);
+
   const swipeContainerRef = useHorizontalDaySwipe(goPrevDay, goNextDay);
 
   useEffect(() => {
@@ -348,6 +363,7 @@ export default function SchedulePage() {
 
   const uid = user?.id;
   const todayKey = todayDateKey(studioTimeZone);
+  const isCurrentWeek = weekSundayKey <= weekSundayDateKey(todayKey, studioTimeZone);
   const selectedDayIsPast = isPastScheduleDay(selectedDateKey, studioTimeZone);
   const isToday = selectedDateKey === todayKey;
   const timeLineIndex = isToday ? currentTimeLineInsertIndex(classes, nowMs) : -1;
@@ -421,7 +437,29 @@ export default function SchedulePage() {
           className="sticky top-0 z-20 border-b border-border bg-background"
         >
           <div className="space-y-2 px-4 py-2">
-            <p className="text-center text-xs text-muted-foreground">{monthLabel}</p>
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                aria-label="Previous week"
+                onClick={goPrevWeek}
+                disabled={isCurrentWeek}
+                className={cn(
+                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground",
+                  isCurrentWeek && "invisible",
+                )}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <p className="text-center text-xs text-muted-foreground">{monthLabel}</p>
+              <button
+                type="button"
+                aria-label="Next week"
+                onClick={goNextWeek}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
             <WeekDayStrip
               days={daysInWeek.map((dayKey) => {
                 const selected = dayKey === selectedDateKey;
