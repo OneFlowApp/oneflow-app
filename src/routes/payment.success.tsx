@@ -3,8 +3,6 @@ import { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { getUser, supabase } from "@/lib/supabase";
-import { defaultAllowedClassTypesForCreditCategory } from "@/lib/allowedClassTypes";
-import { buildProductCreditRows } from "@/lib/multiCreditProducts";
 
 /** May challenge stamps are written on studio check-in (see upsertMayChallengeCheckIn), not here. */
 
@@ -26,6 +24,8 @@ type ProductRow = {
 
 type PageState =
   | { status: "loading" }
+  | { status: "confirming" }
+  | { status: "pending" }
   | { status: "guest" }
   | { status: "error"; message: string }
   | {
@@ -38,33 +38,36 @@ type PageState =
   | { status: "success_class_booked"; productName: string; className: string }
   | { status: "success_generic" };
 
-const CREDIT_GRANT_KEY = "oneflow_credits_granted";
 const CLASS_INVITE_FINALIZE_KEY = "oneflow_class_invite_finalized";
 
-async function tryRedeemPackFlowPoints(args: {
-  checkoutId: string | null;
-  packId: string;
+const CREDIT_POLL_INTERVAL_MS = 2000;
+const CREDIT_POLL_TIMEOUT_MS = 40000;
+const CREDIT_RECENT_WINDOW_MS = 60 * 60 * 1000;
+
+type CreditRow = { id: string; is_unlimited: boolean | null };
+
+/** Polls `user_credits` until the webhook-created credit for this pack appears, or times out. */
+async function waitForPackCredits(args: {
   profileId: string;
-  used: number;
-}) {
-  const { checkoutId, packId, profileId, used } = args;
-  if (used <= 0) return;
-  const storageKey = checkoutId
-    ? `oneflow_fp_pack_redeem:${checkoutId}`
-    : `oneflow_fp_pack_redeem:${packId}:${profileId}`;
-  if (sessionStorage.getItem(storageKey)) return;
-  const { error } = await supabase.rpc("redeem_my_flow_points", { p_amount: used });
-  if (error) {
-    console.error("redeem_my_flow_points", error);
-    return;
+  packId: string;
+  isCancelled: () => boolean;
+}): Promise<CreditRow[] | null> {
+  const deadline = Date.now() + CREDIT_POLL_TIMEOUT_MS;
+  while (!args.isCancelled()) {
+    const since = new Date(Date.now() - CREDIT_RECENT_WINDOW_MS).toISOString();
+    const { data, error } = await supabase
+      .from("user_credits")
+      .select("id, is_unlimited")
+      .eq("profile_id", args.profileId)
+      .eq("product_id", args.packId)
+      .gte("purchased_at", since)
+      .order("purchased_at", { ascending: false });
+    if (error) console.error("user_credits poll", error);
+    if (data && data.length > 0) return data as CreditRow[];
+    if (Date.now() + CREDIT_POLL_INTERVAL_MS > deadline) return null;
+    await new Promise((r) => setTimeout(r, CREDIT_POLL_INTERVAL_MS));
   }
-  sessionStorage.setItem(storageKey, "1");
-  const { error: logErr } = await supabase.from("flow_points").insert({
-    profile_id: profileId,
-    points: -used,
-    reason: "pack_redemption",
-  });
-  if (logErr) console.warn("flow_points ledger", logErr);
+  return null;
 }
 
 async function autoBookClassAfterTicketPurchase(args: {
@@ -113,7 +116,6 @@ function PaymentSuccessPage() {
       const params = new URLSearchParams(window.location.search);
       const packId = params.get("pack_id");
       const profileId = params.get("profile_id");
-      const checkoutId = params.get("checkoutId");
       const classInviteId = params.get("class_invite_id");
       const classId = params.get("class_id");
       const autoBook = params.get("auto_book") === "1";
@@ -165,47 +167,13 @@ function PaymentSuccessPage() {
         return;
       }
 
-      const flowPointsUsed = Math.max(0, Math.floor(Number(params.get("flow_points_used") ?? "0") || 0));
-
-      const dedupeKey = `${CREDIT_GRANT_KEY}:${packId}:${profileId}`;
-      if (sessionStorage.getItem(dedupeKey)) {
-        await tryRedeemPackFlowPoints({
-          checkoutId,
-          packId,
-          profileId,
-          used: flowPointsUsed,
-        });
-        const { data: product } = await supabase
-          .from("products")
-          .select("name, credit_count")
-          .eq("id", packId)
-          .order("category", { ascending: true })
-          .order("name", { ascending: true })
-          .maybeSingle();
-        const creditCount = Number((product as ProductRow | null)?.credit_count ?? 0);
-        if (!cancelled) {
-          setState({
-            status: "success",
-            productName: (product as { name?: string } | null)?.name ?? "Your pack",
-            creditsAdded: creditCount >= 999 ? 0 : creditCount,
-            isUnlimited: creditCount >= 999,
-          });
-        }
-        return;
-      }
-
-      const [{ data: product, error: productError }, { data: existingProfile }] = await Promise.all(
-        [
-          supabase
-            .from("products")
-            .select("id, name, category, allowed_class_types, credit_count, validity_days")
-            .eq("id", packId)
-            .order("category", { ascending: true })
-            .order("name", { ascending: true })
-            .maybeSingle(),
-          supabase.from("profiles").select("id").eq("id", profileId).maybeSingle(),
-        ],
-      );
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("id, name, category, allowed_class_types, credit_count, validity_days")
+        .eq("id", packId)
+        .order("category", { ascending: true })
+        .order("name", { ascending: true })
+        .maybeSingle();
 
       if (productError || !product) {
         console.error(productError);
@@ -219,65 +187,18 @@ function PaymentSuccessPage() {
         typeof creditCountRaw === "number" ? creditCountRaw : Number(creditCountRaw ?? 0) || 0;
       const isUnlimited = creditCount >= 999;
 
-      // Ensure profile exists before inserting credits
-      if (!existingProfile) {
-        await supabase.from("profiles").insert({
-          id: profileId,
-          email: user?.email ?? "",
-          role: "customer",
-        });
-        // Wait briefly for profile to be created
-        await new Promise((r) => setTimeout(r, 500));
-      }
+      // Credits are created by the yoco-webhook function once Yoco confirms the payment.
+      if (!cancelled) setState({ status: "confirming" });
+      const credits = await waitForPackCredits({ profileId, packId, isCancelled: () => cancelled });
+      if (cancelled) return;
 
-      const expiresAt = p.validity_days
-        ? new Date(Date.now() + p.validity_days * 86400000).toISOString()
-        : null;
-
-      const creditRows = buildProductCreditRows({
-        productName: p.name,
-        profileId,
-        productId: packId,
-        expiresAt,
-        paymentId: checkoutId ?? "yoco_checkout",
-        purchasedAt: new Date().toISOString(),
-        category: p.category ?? "yoga",
-        allowedClassTypes: p.allowed_class_types?.length
-          ? p.allowed_class_types
-          : [...defaultAllowedClassTypesForCreditCategory(p.category)],
-        creditsTotal: creditCount,
-        creditsRemaining: creditCount,
-        isUnlimited,
-      });
-
-      const { error: insertError, data: insertedCredits } = await supabase
-        .from("user_credits")
-        .insert(creditRows)
-        .select("id");
-
-      if (insertError) {
-        console.error(insertError);
-        if (!cancelled) {
-          setState({
-            status: "error",
-            message:
-              insertError.message || "Could not add credits. They may already be on your account.",
-          });
-        }
+      if (!credits) {
+        setState({ status: "pending" });
         return;
       }
 
-      sessionStorage.setItem(dedupeKey, "1");
-      await tryRedeemPackFlowPoints({
-        checkoutId,
-        packId,
-        profileId,
-        used: flowPointsUsed,
-      });
-
       if (classId && autoBook) {
-        const creditId =
-          (insertedCredits?.[0] as { id?: string } | undefined)?.id ?? null;
+        const creditId = credits[0]?.id ?? null;
         const booked = await autoBookClassAfterTicketPurchase({
           profileId,
           classId,
@@ -303,8 +224,7 @@ function PaymentSuccessPage() {
       }
 
       if (!cancelled) {
-        const bundleUnlimited =
-          isUnlimited || creditRows.some((row) => row.is_unlimited);
+        const bundleUnlimited = isUnlimited || credits.some((row) => row.is_unlimited);
         setState({
           status: "success",
           productName: p.name,
@@ -338,6 +258,21 @@ function PaymentSuccessPage() {
           <>
             <Loader2 className="mt-8 h-10 w-10 animate-spin text-[#4a6b3c]" aria-label="Loading" />
             <p className="mt-4 text-sm text-muted-foreground">Confirming your purchase…</p>
+          </>
+        ) : state.status === "confirming" ? (
+          <>
+            <Loader2 className="mt-8 h-10 w-10 animate-spin text-[#4a6b3c]" aria-label="Loading" />
+            <p className="mt-4 text-sm text-muted-foreground">Confirming your payment...</p>
+          </>
+        ) : state.status === "pending" ? (
+          <>
+            <h1 className="mt-8 font-display text-3xl font-bold tracking-tight text-[#3d4f36] dark:text-foreground">
+              Payment successful!
+            </h1>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Your payment went through, but your pack is taking a little longer to appear. Please
+              check My Account in a few minutes, or contact the studio.
+            </p>
           </>
         ) : state.status === "guest" ? (
           <>
