@@ -6,7 +6,7 @@ import { PageTransition } from "@/components/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/contexts/auth";
 import { ClassCatalogProvider } from "@/contexts/classCatalog";
-import { canViewCustomerApp } from "@/lib/adminMarketingAccess";
+import { canEnterAdmin, landingPathFor } from "@/lib/roleAccess";
 import { captureReferrerFromSearch } from "@/lib/referral";
 
 function CustomerBottomNav() {
@@ -98,21 +98,13 @@ function ProtectedOutlet() {
   const initialRouteResolved = useRef(false);
 
   const onboardingDone = profile?.onboarding_complete === true;
-  const role = (profile?.role ?? "").toLowerCase();
-  const secondary = (profile?.secondary_roles ?? []).map((r) => String(r).toLowerCase());
   const roleProfile = {
     role: profile?.role ?? null,
     secondary_roles: profile?.secondary_roles ?? null,
   };
-  const viewCustomerApp = canViewCustomerApp(roleProfile);
-  const isStaff =
-    role === "director" ||
-    role === "management" ||
-    role === "guide" ||
-    role === "front_desk" ||
-    role === "boh" ||
-    role === "marketing" ||
-    secondary.includes("marketing");
+  // Staff land on the first admin page their combined roles allow; everyone else on "/".
+  const landingPath = landingPathFor(roleProfile);
+  const hasAdminAccess = canEnterAdmin(roleProfile);
 
   useEffect(() => {
     if (initialRouteResolved.current) return;
@@ -120,7 +112,7 @@ function ProtectedOutlet() {
     if (user && !profileReady) return;
 
     const pathname = window.location.pathname;
-    let target: "/" | "/admin" | "/auth" | "/onboarding" | null = null;
+    let target: string | null = null;
 
     const publicPath = isAuthPublicPath(pathname);
 
@@ -151,35 +143,21 @@ function ProtectedOutlet() {
     }
 
     if (onOnboarding || onAuth) {
-      target = isStaff ? "/admin" : "/";
+      target = landingPath;
       initialRouteResolved.current = true;
       if (target && target !== pathname) navigate({ to: target, replace: true });
       return;
     }
 
-    if (!isStaff && onAdmin) {
+    if (!hasAdminAccess && onAdmin) {
       target = "/";
       initialRouteResolved.current = true;
       if (target && target !== pathname) navigate({ to: target, replace: true });
       return;
     }
 
-    if (
-      isStaff &&
-      !viewCustomerApp &&
-      !onAdmin &&
-      !onAuth &&
-      !onOnboarding &&
-      !publicPath
-    ) {
-      target = "/admin";
-      initialRouteResolved.current = true;
-      if (target !== pathname) navigate({ to: target, replace: true });
-      return;
-    }
-
     initialRouteResolved.current = true;
-  }, [authReady, user?.id, profileReady, onboardingDone, isStaff, viewCustomerApp, navigate]);
+  }, [authReady, user?.id, profileReady, onboardingDone, landingPath, hasAdminAccess, navigate]);
 
   const sessionResolving = !authReady || (!!user && !profileReady);
   const onResetPassword =

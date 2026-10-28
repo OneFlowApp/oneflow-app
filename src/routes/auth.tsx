@@ -1,6 +1,7 @@
 import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getUser, supabase } from "@/lib/supabase";
+import { landingPathFor } from "@/lib/roleAccess";
 import { ensureProfileNamesFromOAuth } from "@/lib/oauthProfileNames";
 import { applyStoredReferrerToProfile, captureReferrerFromSearch } from "@/lib/referral";
 import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
@@ -49,7 +50,7 @@ async function resolveDestination(userId: string, redirectPath?: string) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("phone, date_of_birth, role")
+    .select("phone, date_of_birth, role, secondary_roles")
     .eq("id", userId)
     .maybeSingle();
   if (!profile?.phone || !profile?.date_of_birth) {
@@ -63,9 +64,10 @@ async function resolveDestination(userId: string, redirectPath?: string) {
     return "/onboarding";
   }
   if (safeRedirect) return safeRedirect;
-  const role = (profile.role ?? "").toLowerCase();
-  if (role === "director" || role === "management" || role === "guide") return "/admin";
-  return "/";
+  return landingPathFor({
+    role: (profile.role as string | null) ?? null,
+    secondary_roles: (profile.secondary_roles as string[] | null) ?? null,
+  });
 }
 
 function AuthPage() {

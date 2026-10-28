@@ -21,16 +21,11 @@ import {
   Settings,
   Download,
 } from "lucide-react";
-import {
-  canAccessMarketingAdmin,
-  canViewCustomerApp,
-  isMarketingCommsAdminPath,
-  isMarketingFinancialAdminPath,
-  isMarketingScopedStaff,
-  MARKETING_COMMS_ADMIN_ROUTES,
-  type AdminRoleProfile,
-} from "@/lib/adminMarketingAccess";
+import { canUseMemberApp, canOpenAdminPage, type RoleProfile } from "@/lib/roleAccess";
 import { cn } from "@/lib/utils";
+
+/** Profile fields used for admin access checks. */
+export type AdminRoleProfile = RoleProfile;
 
 export interface AdminNavItem {
   to: string;
@@ -38,67 +33,14 @@ export interface AdminNavItem {
   icon: LucideIcon;
 }
 
-/** Routes guide/front-desk roles may open (nav + deep-link guard in `admin.tsx`). */
-export const LIMITED_ADMIN_ROUTES = [
-  "/admin/check-in",
-  "/admin/bookings",
-  // Master (/admin/schedule) is director/management only — not in limited set.
-] as const;
-
-export function isLimitedAdminRole(role: string | null | undefined) {
-  const r = (role ?? "").toLowerCase();
-  return r === "guide" || r === "front_desk";
+/** Whether this admin URL is open to the person (nav + deep-link guard in `admin.tsx`). */
+export function isPathAllowedForRestrictedAdmin(profile: AdminRoleProfile, pathname: string) {
+  return canOpenAdminPage(profile, pathname);
 }
 
-export function isBohRole(role: string | null | undefined) {
-  return (role ?? "").toLowerCase() === "boh";
-}
-
-export function isPathAllowedForLimitedRole(pathname: string) {
-  return LIMITED_ADMIN_ROUTES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
-
-/** BOH is restricted to check-in; guide/front_desk use LIMITED_ADMIN_ROUTES (+ marketing comms if allowed). */
-export function isPathAllowedForRestrictedAdmin(
-  profile: AdminRoleProfile,
-  pathname: string,
-) {
-  const role = profile.role;
-  if (canAccessMarketingAdmin(profile) && isMarketingCommsAdminPath(pathname)) {
-    return true;
-  }
-  if (isBohRole(role)) {
-    return pathname === "/admin/check-in" || pathname.startsWith("/admin/check-in/");
-  }
-  if (isLimitedAdminRole(role)) {
-    return isPathAllowedForLimitedRole(pathname);
-  }
-  if (isMarketingScopedStaff(profile)) {
-    if (pathname !== "/admin" && !pathname.startsWith("/admin/")) return false;
-    return !isMarketingFinancialAdminPath(pathname);
-  }
-  return true;
-}
-
+/** Menu items for every page the person's combined roles allow. */
 export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
-  const r = (profile.role ?? "").toLowerCase();
-  if (r === "director" || r === "management") return adminNavItems;
-  if (isBohRole(profile.role)) {
-    return adminNavItems.filter((i) => i.to === "/admin/check-in");
-  }
-  if (isMarketingScopedStaff(profile) && !isLimitedAdminRole(profile.role)) {
-    return adminNavItems.filter(
-      (i) => !isMarketingFinancialAdminPath(i.to) && i.to !== "/admin/schedule",
-    );
-  }
-  if (isLimitedAdminRole(profile.role)) {
-    const allow = new Set<string>(LIMITED_ADMIN_ROUTES);
-    if (canAccessMarketingAdmin(profile)) {
-      for (const p of MARKETING_COMMS_ADMIN_ROUTES) allow.add(p);
-    }
-    return adminNavItems.filter((i) => allow.has(i.to));
-  }
-  return adminNavItems;
+  return adminNavItems.filter((i) => canOpenAdminPage(profile, i.to));
 }
 
 export const adminNavItems: AdminNavItem[] = [
@@ -189,7 +131,7 @@ export function AdminSidebarFooter({
   onNavigate?: () => void;
   onSignOut: () => void;
 }) {
-  const showCustomerView = canViewCustomerApp(profile);
+  const showCustomerView = canUseMemberApp(profile);
 
   return (
     <div className="flex shrink-0 flex-col border-t border-sidebar-border">

@@ -30,7 +30,7 @@ import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/client-comms")({
-  beforeLoad: () => ensureMarketingAdminAccess(),
+  beforeLoad: ({ location }) => ensureMarketingAdminAccess(location.pathname),
   head: () => ({ meta: [{ title: "Client Comms — One Flow Admin" }] }),
   component: ClientCommsPage,
 });

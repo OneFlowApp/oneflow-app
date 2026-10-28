@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { landingPathFor } from "@/lib/roleAccess";
 import { ensureProfileNamesFromOAuth } from "@/lib/oauthProfileNames";
 
 export const Route = createFileRoute("/auth/callback")({
@@ -11,6 +12,7 @@ type ProfileGate = {
   phone: string | null;
   date_of_birth: string | null;
   role: string | null;
+  secondary_roles: string[] | null;
   onboarding_complete?: boolean | null;
 };
 
@@ -37,20 +39,18 @@ function hasOAuthOrMagicLinkCallback(): boolean {
 async function loadProfileGate(userId: string) {
   const { data } = await supabase
     .from("profiles")
-    .select("phone, date_of_birth, role, onboarding_complete")
+    .select("phone, date_of_birth, role, secondary_roles, onboarding_complete")
     .eq("id", userId)
     .maybeSingle();
   return data as ProfileGate | null;
 }
 
-async function resolveDestination(userId: string): Promise<"/onboarding" | "/admin" | "/"> {
+async function resolveDestination(userId: string): Promise<string> {
   const profile = await loadProfileGate(userId);
 
   if (!profile || !profile.phone || !profile.date_of_birth) return "/onboarding";
 
-  const role = (profile.role ?? "").toLowerCase();
-  if (role === "director" || role === "management" || role === "guide") return "/admin";
-  return "/";
+  return landingPathFor(profile);
 }
 
 export default function AuthCallback() {
