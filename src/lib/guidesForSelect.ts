@@ -49,7 +49,7 @@ function guideLabel(g: Pick<GuideSelectRow, "first_name" | "last_name">): string
 
 /**
  * Active guides with profile names for class forms.
- * Uses `guides` + embedded `profiles` (and falls back to a direct profiles query if embed names are empty).
+ * Uses `guides`, then names and photos from `member_directory`.
  */
 export async function fetchGuidesForClassSelect(
   client: SupabaseClient = supabase,
@@ -59,8 +59,8 @@ export async function fetchGuidesForClassSelect(
 }> {
   console.log(LOG, "fetchGuidesForClassSelect start");
 
-  const selectStr =
-    "id, profile_id, profiles!guides_profile_id_fkey(first_name, last_name, avatar_url)";
+  // Names come from member_directory below (members cannot read guides' full profiles).
+  const selectStr = "id, profile_id";
 
   const res = await client
     .from("guides")
@@ -97,7 +97,7 @@ export async function fetchGuidesForClassSelect(
   const needsNames = mapped.filter((m) => m.profile_id && !guideLabel(m)).map((m) => m.profile_id);
   if (needsNames.length > 0) {
     const { data: profs, error: pErr } = await client
-      .from("profiles")
+      .from("member_directory")
       .select("id, first_name, last_name, avatar_url")
       .in("id", [...new Set(needsNames)]);
     console.log(LOG, "profiles fallback for names", {

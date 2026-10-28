@@ -17,7 +17,7 @@ type ProfileMini = {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
-  email: string | null;
+  email?: string | null;
 };
 
 function escapeIlike(s: string): string {
@@ -81,9 +81,10 @@ export function FriendsPanel() {
       return;
     }
 
+    // member_directory exposes names and photos only; other members' contact details stay private.
     const { data: profs, error: pErr } = await supabase
-      .from("profiles")
-      .select("id, first_name, last_name, avatar_url, email")
+      .from("member_directory")
+      .select("id, first_name, last_name, avatar_url")
       .in("id", [...ids]);
 
     if (pErr) {
@@ -133,11 +134,12 @@ export function FriendsPanel() {
       setSearching(true);
       const pattern = `%${escapeIlike(debouncedQ)}%`;
       const { data, error } = await supabase
-        .from("profiles")
-        .select("id, first_name, last_name, avatar_url, email")
+        .from("member_directory")
+        .select("id, first_name, last_name, avatar_url")
         .or(`first_name.ilike.${pattern},last_name.ilike.${pattern}`)
         .neq("id", userId)
         .eq("is_active", true)
+        .eq("is_searchable", true)
         .limit(10);
 
       if (cancelled) return;
@@ -213,20 +215,17 @@ export function FriendsPanel() {
       setAddingId(null);
       return;
     }
-    const toEmail = target.email?.trim();
-    if (toEmail) {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          to: toEmail,
-          template: "friend_request",
-          data: {
-            from_name: myName,
-            first_name: myName.split(/\s+/)[0] ?? myName,
-            to_email: toEmail,
-          },
+    // The email function looks up the recipient's address on the server, so members never see it.
+    await supabase.functions.invoke("send-email", {
+      body: {
+        to_profile_id: target.id,
+        template: "friend_request",
+        data: {
+          from_name: myName,
+          first_name: myName.split(/\s+/)[0] ?? myName,
         },
-      });
-    }
+      },
+    });
     toast.success("Friend request sent");
     await refreshFriendships(userId);
     setAddingId(null);

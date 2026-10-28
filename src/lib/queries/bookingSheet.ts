@@ -148,7 +148,7 @@ export async function fetchBookingSheetData(
   let acceptedFriends: BookingSheetData["acceptedFriends"] = [];
   if (otherIds.length > 0) {
     const { data: profs } = await supabase
-      .from("profiles")
+      .from("member_directory")
       .select("id, first_name, last_name, avatar_url")
       .in("id", otherIds);
     acceptedFriends = (profs ?? []) as BookingSheetData["acceptedFriends"];
