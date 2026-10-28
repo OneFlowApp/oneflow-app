@@ -8,8 +8,16 @@ import logo from "@/assets/oneflow-logo.webp";
 export function AppShell({ children }: { children: ReactNode }) {
   const { profile } = useAuth();
   const role = (profile?.role ?? "").toLowerCase();
+  const secondary = (profile?.secondary_roles ?? []).map((r) => String(r).toLowerCase());
   const showAdminCta =
-    role === "director" || role === "management" || role === "guide";
+    role === "director" ||
+    role === "management" ||
+    role === "team" ||
+    role === "guide" ||
+    role === "front_desk" ||
+    role === "boh" ||
+    role === "marketing" ||
+    secondary.includes("marketing");
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background">
