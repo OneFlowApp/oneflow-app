@@ -173,3 +173,27 @@ export function landingPathFor(profile: RoleProfile | null | undefined): string 
   if (!isStaff(profile)) return "/";
   return firstAdminPath(profile) ?? "/";
 }
+
+/** Strongest role order, matching the database's get_my_role(). */
+const ROLE_STRENGTH = [
+  "director",
+  "management",
+  "front_desk",
+  "guide",
+  "marketing",
+  "boh",
+  "team",
+  "customer",
+] as const;
+
+/**
+ * The single strongest role a person holds across their main role and tags.
+ * Use this wherever a page compares one role string (e.g. `=== "director"`),
+ * so a Guide tagged Director is treated as a Director.
+ */
+export function effectiveRole(profile: RoleProfile | null | undefined): string | null {
+  const roles = rolesOf(profile);
+  for (const r of ROLE_STRENGTH) if (roles.has(r)) return r;
+  const first = [...roles][0];
+  return first ?? null;
+}

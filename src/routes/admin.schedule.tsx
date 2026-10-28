@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { Fragment, forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -301,7 +302,7 @@ function classMatchesGuideFilter(c: ClassRow, guideFilter: string, guides: Guide
 function SchedulePage() {
   const navigate = useNavigate();
   const { profile, profileReady } = useAuth();
-  const role = profile?.role ?? null;
+  const role = effectiveRole(profile);
   const roleLower = (role ?? "").toLowerCase();
   /** Match customers/payouts: director || management (no separate "manager" role). */
   const canAccessMaster = roleLower === "director" || roleLower === "management";

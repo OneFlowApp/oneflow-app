@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, UserCog, Filter, X } from "lucide-react";
 import { toast } from "sonner";
@@ -188,7 +189,7 @@ function initials(firstName: string, lastName: string, email: string): string {
 
 function GuidesPage() {
   const { user, profile } = useAuth();
-  const viewerRole = roleType(profile?.role);
+  const viewerRole = roleType(effectiveRole(profile));
   const [rows, setRows] = useState<GuideRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -352,7 +353,7 @@ function GuidesPage() {
     void load();
   }, [load]);
 
-  const canManage = viewerRole === "director";
+  const canManage = viewerRole === "director" || viewerRole === "management";
   const canAssignPackages = viewerRole === "director" || viewerRole === "management";
 
   const sortedRows = useMemo(() => {
@@ -426,7 +427,7 @@ function GuidesPage() {
 
   const saveGuide = async () => {
     if (!canManage) {
-      toast.error("Only directors can manage guides.");
+      toast.error("Only directors and management can manage guides.");
       return;
     }
 
@@ -527,7 +528,7 @@ function GuidesPage() {
 
   const toggleActive = async (row: GuideRow, next: boolean) => {
     if (!canManage) {
-      toast.error("Only directors can manage guides.");
+      toast.error("Only directors and management can manage guides.");
       return;
     }
 

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Check, Undo2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -105,7 +106,7 @@ function BookingClassDetailPage() {
   useClassCatalog();
   const { classId } = Route.useParams();
   const { profile } = useAuth();
-  const isGuide = (profile?.role ?? "").toLowerCase() === "guide";
+  const isGuide = effectiveRole(profile) === "guide";
 
   const [cls, setCls] = useState<ClassRow | null>(null);
   const [roster, setRoster] = useState<BookingRow[]>([]);
