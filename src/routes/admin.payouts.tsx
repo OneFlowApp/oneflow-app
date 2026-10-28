@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Check,
@@ -160,16 +161,22 @@ function PayoutsPage() {
       setMe(user.id);
       const { data } = await supabase
         .from("profiles")
-        .select("role, first_name, last_name")
+        .select("role, secondary_roles, first_name, last_name")
         .eq("id", user.id)
         .maybeSingle();
-      const rec = data as { role?: string; first_name?: string; last_name?: string } | null;
-      setRole(classifyRole(rec?.role));
+      const rec = data as {
+        role?: string;
+        secondary_roles?: string[] | null;
+        first_name?: string;
+        last_name?: string;
+      } | null;
+      setRole(classifyRole(effectiveRole({ role: rec?.role ?? null, secondary_roles: rec?.secondary_roles ?? null })));
       setMeName(`${rec?.first_name ?? ""} ${rec?.last_name ?? ""}`.trim() || "Guide");
     })();
   }, []);
 
-  const isAdmin = role === "director" || role === "management";
+  // Payouts: only Directors approve and pay (matches the database rule).
+  const isAdmin = role === "director";
   const isGuide = role === "guide";
 
   // Load invoices (admin or guide-self).

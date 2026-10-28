@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { useMemo, useState } from "react";
 import { CalendarDays, Percent, UserCheck, Users } from "lucide-react";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -52,7 +53,7 @@ function AdminDashboard() {
   const [rosterOpen, setRosterOpen] = useState(false);
   const [rosterSession, setRosterSession] = useState<ClassRosterSession | null>(null);
 
-  const viewerRole = profile?.role ?? null;
+  const viewerRole = effectiveRole(profile);
   const canOpenClassRoster = useMemo(() => {
     const r = (viewerRole ?? "").toLowerCase();
     return r === "director" || r === "management";

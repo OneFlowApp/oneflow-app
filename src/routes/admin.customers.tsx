@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Filter, Loader2, Mail, MessageSquare, Package, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
@@ -297,7 +298,7 @@ function CustomerRowActions({
 
 function CustomersPage() {
   const { profile } = useAuth();
-  const viewerRole = profile?.role ?? null;
+  const viewerRole = effectiveRole(profile);
   const navigate = useNavigate();
   const search = Route.useSearch();
 

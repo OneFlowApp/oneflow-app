@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
@@ -131,7 +132,7 @@ function initials(first: string, last: string, email: string): string {
 
 function StaffPage() {
   const { profile } = useAuth();
-  const viewerRole = profile?.role ?? null;
+  const viewerRole = effectiveRole(profile);
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
 
