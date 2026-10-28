@@ -35,6 +35,8 @@ import { supabase } from "@/lib/supabase";
 import { formatStudioDateTime } from "@/lib/timezone";
 import { edgeFunctionErrorMessage, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth";
+import { canSeeMemberPrivateDetails } from "@/lib/roleAccess";
 
 const SAGE = "#a3b693";
 const SEARCH_DEBOUNCE_MS = 300;
@@ -57,6 +59,7 @@ type MemberHit = {
   first_name: string | null;
   last_name: string | null;
   email: string | null;
+  phone: string | null;
   role: string | null;
   secondary_roles: string[] | null;
   waiver_accepted_at: string | null;
@@ -86,6 +89,16 @@ function isValidEmail(v: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
 }
 
+/** Contact line under a member: email for Director/Management/Marketing, phone for everyone else. */
+function memberContact(m: Pick<MemberHit, "email" | "phone">, showPrivate: boolean, empty: string): string {
+  if (showPrivate) return m.email?.trim() || empty;
+  return m.phone?.trim() || empty;
+}
+
+function memberName(m: Pick<MemberHit, "first_name" | "last_name">): string {
+  return [m.first_name, m.last_name].filter(Boolean).join(" ").trim() || "Member";
+}
+
 function memberLabel(m: Pick<MemberHit, "first_name" | "last_name" | "email">): string {
   const name = `${m.first_name ?? ""} ${m.last_name ?? ""}`.trim();
   return name || m.email?.trim() || "Member";
@@ -107,6 +120,8 @@ type Props = {
 };
 
 export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
+  const { profile: viewer } = useAuth();
+  const showPrivate = canSeeMemberPrivateDetails(viewer);
   const [mode, setMode] = useState<WalkInMode>("existing");
 
   const [memberQuery, setMemberQuery] = useState("");
@@ -190,7 +205,7 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
       setSearchingMembers(true);
       const pat = `%${debouncedMemberQuery}%`;
       const selectCols =
-        "id, first_name, last_name, email, role, secondary_roles, waiver_accepted_at";
+        "id, first_name, last_name, email, phone, role, secondary_roles, waiver_accepted_at";
       const [fnRes, lnRes, emRes] = await Promise.all([
         supabase.from("profiles").select(selectCols).ilike("first_name", pat).limit(12),
         supabase.from("profiles").select(selectCols).ilike("last_name", pat).limit(12),
@@ -340,7 +355,7 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
           setSaving(false);
           return;
         }
-        displayName = memberLabel(selectedMember);
+        displayName = showPrivate ? memberLabel(selectedMember) : memberName(selectedMember);
         emailForConfirm = selectedMember.email?.trim() || null;
         body = {
           profile_id: selectedMember.id,
@@ -476,10 +491,10 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
                   <div className="min-w-0">
                     <p className="flex items-center gap-1.5 text-sm font-semibold">
                       <User className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                      {memberLabel(selectedMember)}
+                      {showPrivate ? memberLabel(selectedMember) : memberName(selectedMember)}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {selectedMember.email?.trim() || "No email on file"}
+                      {memberContact(selectedMember, showPrivate, showPrivate ? "No email on file" : "No phone on file")}
                     </p>
                   </div>
                   <Button
@@ -532,9 +547,9 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
                                 setWaiverAgreed(false);
                               }}
                             >
-                              <span className="font-medium">{memberLabel(m)}</span>
+                              <span className="font-medium">{showPrivate ? memberLabel(m) : memberName(m)}</span>
                               <span className="text-xs text-muted-foreground">
-                                {m.email?.trim() || "—"}
+                                {memberContact(m, showPrivate, "—")}
                               </span>
                             </button>
                           </li>

@@ -13,6 +13,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth";
+import { canSeeMemberPrivateDetails } from "@/lib/roleAccess";
 
 const DEBOUNCE_MS = 300;
 const MIN_LEN = 2;
@@ -54,6 +56,8 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
   const debounced = useDebouncedValue(q.trim(), DEBOUNCE_MS);
   const [loading, setLoading] = useState(false);
   const [hits, setHits] = useState<Hit[]>([]);
+  const { profile: viewer } = useAuth();
+  const showPrivate = canSeeMemberPrivateDetails(viewer);
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -111,8 +115,8 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
         return {
           kind: "customer" as const,
           id: String(r.id),
-          label: `${fn} ${ln}`.trim() || em || "Member",
-          sub: em || "—",
+          label: `${fn} ${ln}`.trim() || (showPrivate ? em : "") || "Member",
+          sub: showPrivate ? em || "—" : "",
         };
       });
 
@@ -146,7 +150,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
           kind: "booking",
           id: String(row.id),
           profileId: String(row.profile_id ?? ""),
-          label: `${fn} ${ln}`.trim() || em || "Booking",
+          label: `${fn} ${ln}`.trim() || (showPrivate ? em : "") || "Booking",
           sub: c?.name ? `${c.name}` : "Class",
         });
         if (bookingHits.length >= 8) break;
@@ -156,7 +160,7 @@ export function AdminGlobalSearch({ className }: { className?: string }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showPrivate]);
 
   useEffect(() => {
     void runSearch(debounced);

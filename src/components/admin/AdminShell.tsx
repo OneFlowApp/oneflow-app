@@ -7,6 +7,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import logo from "@/assets/oneflow-logo.webp";
 import { AdminGlobalSearch } from "@/components/admin/AdminGlobalSearch";
 import { useAuth } from "@/contexts/auth";
+import { supabase } from "@/lib/supabase";
+import { adminAreaForPath, canEdit, canOpenAdminArea } from "@/lib/roleAccess";
 
 type AdminProfile = {
   email: string | null;
@@ -58,6 +60,15 @@ export function AdminShell({ children }: { children: ReactNode }) {
     role: profile?.role ?? null,
     secondary_roles: profile?.secondary_roles ?? null,
   };
+
+  // Pages someone can open but not change show a "View only" note (the database blocks saves there too).
+  const area = adminAreaForPath(pathname);
+  const viewOnly =
+    area != null &&
+    area !== "dashboard" &&
+    area !== "install-app" &&
+    canOpenAdminArea(roleProfile, area) &&
+    !canEdit(roleProfile, area);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -173,6 +184,15 @@ export function AdminShell({ children }: { children: ReactNode }) {
               : "overflow-y-auto",
           )}
         >
+          {viewOnly ? (
+            <div
+              role="note"
+              className="mb-4 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-100"
+            >
+              <span className="font-semibold">View only.</span> You can look at this page, but changes
+              you make here will not be saved.
+            </div>
+          ) : null}
           {children}
         </main>
       </div>
