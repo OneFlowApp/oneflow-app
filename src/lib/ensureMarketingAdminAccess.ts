@@ -1,9 +1,9 @@
 import { redirect } from "@tanstack/react-router";
-import { canAccessMarketingAdmin } from "@/lib/adminMarketingAccess";
+import { canOpenAdminPage, firstAdminPath } from "@/lib/roleAccess";
 import { getUser, supabase } from "@/lib/supabase";
 
-/** Route `beforeLoad` guard for marketing admin pages. */
-export async function ensureMarketingAdminAccess() {
+/** Route `beforeLoad` guard for marketing admin pages (Email, Client comms, Promo codes). */
+export async function ensureMarketingAdminAccess(path: string) {
   const user = await getUser();
   if (!user) {
     throw redirect({ to: "/auth" });
@@ -20,12 +20,11 @@ export async function ensureMarketingAdminAccess() {
     throw redirect({ to: "/admin" });
   }
 
-  if (
-    !canAccessMarketingAdmin({
-      role: (data?.role as string | null) ?? null,
-      secondary_roles: (data?.secondary_roles as string[] | null) ?? null,
-    })
-  ) {
-    throw redirect({ to: "/admin/check-in" });
+  const profile = {
+    role: (data?.role as string | null) ?? null,
+    secondary_roles: (data?.secondary_roles as string[] | null) ?? null,
+  };
+  if (!canOpenAdminPage(profile, path)) {
+    throw redirect({ to: firstAdminPath(profile) ?? "/" });
   }
 }

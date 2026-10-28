@@ -60,7 +60,7 @@ import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 
 export const Route = createFileRoute("/admin/email")({
-  beforeLoad: () => ensureMarketingAdminAccess(),
+  beforeLoad: ({ location }) => ensureMarketingAdminAccess(location.pathname),
   head: () => ({ meta: [{ title: "Email Marketing — One Flow Admin" }] }),
   component: EmailPage,
 });

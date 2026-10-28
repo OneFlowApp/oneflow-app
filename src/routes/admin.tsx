@@ -4,13 +4,7 @@ import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { isPathAllowedForRestrictedAdmin } from "@/components/admin/AdminNav";
-import {
-  canAccessMarketingAdmin,
-  canEnterAdminArea,
-  isMarketingCommsAdminPath,
-  isMarketingScopedStaff,
-  type AdminRoleProfile,
-} from "@/lib/adminMarketingAccess";
+import { canEnterAdmin, firstAdminPath, type RoleProfile } from "@/lib/roleAccess";
 import { useAuth } from "@/contexts/auth";
 
 export const Route = createFileRoute("/admin")({
@@ -38,7 +32,7 @@ function AdminLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { user, authReady, profile, profileReady } = useAuth();
-  const roleProfile = useMemo<AdminRoleProfile>(
+  const roleProfile = useMemo<RoleProfile>(
     () => ({
       role: profile?.role ?? null,
       secondary_roles: profile?.secondary_roles ?? null,
@@ -48,24 +42,16 @@ function AdminLayout() {
 
   useEffect(() => {
     if (!authReady || !user || !profileReady) return;
-    if (!canEnterAdminArea(roleProfile)) return;
+    if (!canEnterAdmin(roleProfile)) return;
 
     if (!isPathAllowedForRestrictedAdmin(roleProfile, pathname)) {
-      const to = isMarketingScopedStaff(roleProfile) ? "/admin" : "/admin/check-in";
-      navigate({ to, replace: true });
-      return;
-    }
-
-    if (
-      isMarketingCommsAdminPath(pathname) &&
-      !canAccessMarketingAdmin(roleProfile)
-    ) {
-      navigate({ to: "/admin/check-in", replace: true });
+      const to = firstAdminPath(roleProfile) ?? "/";
+      if (to !== pathname) navigate({ to, replace: true });
     }
   }, [authReady, user, profileReady, roleProfile, pathname, navigate]);
 
   const loading = !authReady || (!!user && !profileReady);
-  const canAccess = !!user && canEnterAdminArea(roleProfile);
+  const canAccess = !!user && canEnterAdmin(roleProfile);
 
   if (loading) {
     return (
@@ -83,10 +69,18 @@ function AdminLayout() {
     );
   }
 
+  const pageAllowed = isPathAllowedForRestrictedAdmin(roleProfile, pathname);
+
   return (
     <AdminShell>
       <AdminErrorBoundary>
-        <Outlet />
+        {pageAllowed ? (
+          <Outlet />
+        ) : (
+          <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+            Checking access…
+          </div>
+        )}
       </AdminErrorBoundary>
     </AdminShell>
   );

@@ -38,7 +38,7 @@ import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/promotions")({
-  beforeLoad: () => ensureMarketingAdminAccess(),
+  beforeLoad: ({ location }) => ensureMarketingAdminAccess(location.pathname),
   head: () => ({ meta: [{ title: "Promo codes — One Flow Admin" }] }),
   component: PromotionsPage,
 });
