@@ -94,12 +94,19 @@ export function defaultMarketingAdminPath(): string {
   return "/admin";
 }
 
-/** Admin sidebar link to the member app. */
+const CUSTOMER_APP_ROLES = [
+  "customer",
+  "director",
+  "management",
+  "team",
+  "guide",
+  "front_desk",
+  "boh",
+  "marketing",
+];
+
+/** Member app access (and admin sidebar link to it) — every signed-in role. */
 export function canViewCustomerApp(profile: AdminRoleProfile): boolean {
   const roles = profileRoleSet(profile);
-  return (
-    roles.has("director") ||
-    roles.has("customer") ||
-    roles.has("marketing")
-  );
+  return CUSTOMER_APP_ROLES.some((r) => roles.has(r));
 }
