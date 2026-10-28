@@ -43,6 +43,11 @@ function AdminLayout() {
   useEffect(() => {
     if (!authReady || !user || !profileReady) return;
     if (!canEnterAdmin(roleProfile)) return;
+    // Only guard admin pages. While leaving the admin area (e.g. "My Customer View" → "/"),
+    // this layout is still mounted for a moment with the new path; redirecting then would
+    // bounce staff straight back into Admin.
+    const onAdminPath = pathname === "/admin" || pathname.startsWith("/admin/");
+    if (!onAdminPath) return;
 
     if (!isPathAllowedForRestrictedAdmin(roleProfile, pathname)) {
       const to = firstAdminPath(roleProfile) ?? "/";
