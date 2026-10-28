@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ChevronRight, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { supabase } from "@/lib/supabase";
@@ -15,7 +15,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { groupProductsByDisplayCategory, productCategorySlugLabel } from "@/lib/productCategories";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -75,7 +74,18 @@ type AccessGroup = {
 type PricingSection = {
   id: string;
   name: string;
+  sort_order: number | null;
+  is_active: boolean;
 };
+
+type ProductGroup = {
+  key: string;
+  label: string;
+  items: ProductRow[];
+  collapsible?: boolean;
+};
+
+const SWITCHED_OFF_GROUP_KEY = "__switched_off";
 
 /** One "What's included" line; maps to a `product_allowances` row. */
 type AllowanceItem = {
@@ -124,10 +134,6 @@ function formatPriceZar(zar: number) {
   const n = Number(zar);
   if (Number.isNaN(n)) return "R—";
   return `R${n.toLocaleString("en-ZA", { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`;
-}
-
-function tableCategoryLabel(category: string | null | undefined) {
-  return productCategorySlugLabel(category);
 }
 
 /** Parse PostgreSQL `text[]` text representation, e.g. `{yoga,sculpt}` or `{"yoga","sculpt"}`. */
@@ -199,10 +205,14 @@ function emptyForm() {
   };
 }
 
-type ProductSortKey = "name_asc" | "price_asc" | "price_desc" | "category";
+type ProductSortKey = "name_asc" | "price_asc" | "price_desc" | "section";
 
 function compareProductName(a: ProductRow, b: ProductRow): number {
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+function compareProductPrice(a: ProductRow, b: ProductRow): number {
+  return a.price_zar - b.price_zar || compareProductName(a, b);
 }
 
 function isProductDeleteBlockedByFk(error: unknown): boolean {
@@ -238,14 +248,14 @@ function AdminProductTableRow({
             </span>
           )}
         </div>
-        {sectionName && (
-          <p className="mt-0.5 truncate text-xs font-normal text-muted-foreground">{sectionName}</p>
-        )}
       </td>
-      <td className="whitespace-nowrap px-4 py-3 sm:px-5">
-        <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
-          {tableCategoryLabel(p.category)}
-        </span>
+      <td
+        className={cn(
+          "whitespace-nowrap px-4 py-3 sm:px-5",
+          !sectionName && "text-muted-foreground",
+        )}
+      >
+        {sectionName ?? "None"}
       </td>
       <td className="whitespace-nowrap px-4 py-3 tabular-nums sm:px-5">
         {formatPriceZar(p.price_zar)}
@@ -299,7 +309,8 @@ function AdminProductTableRow({
 function ProductsPage() {
   const [rows, setRows] = useState<ProductRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState<ProductSortKey>("category");
+  const [sort, setSort] = useState<ProductSortKey>("section");
+  const [switchedOffOpen, setSwitchedOffOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -378,7 +389,7 @@ function ProductsPage() {
         .order("sort_order", { ascending: true }),
       supabase
         .from("pricing_sections")
-        .select("id, name, sort_order")
+        .select("id, name, sort_order, is_active")
         .eq("is_active", true)
         .order("sort_order", { ascending: true }),
     ]);
@@ -402,6 +413,8 @@ function ProductsPage() {
         (sectionsRes.data ?? []).map((raw: Record<string, unknown>) => ({
           id: String(raw.id),
           name: String(raw.name ?? ""),
+          sort_order: raw.sort_order == null ? null : Number(raw.sort_order),
+          is_active: raw.is_active !== false,
         })),
       );
     }
@@ -420,17 +433,46 @@ function ProductsPage() {
   const sectionNameFor = (p: ProductRow) =>
     p.pricing_section_id ? (pricingSectionNameById.get(p.pricing_section_id) ?? null) : null;
 
-  const groupedProductSections = useMemo(
-    () => groupProductsByDisplayCategory(rows, (a, b) => compareProductName(a, b)),
-    [rows],
-  );
+  const groupedProductSections = useMemo<ProductGroup[]>(() => {
+    const bySection = new Map<string, ProductRow[]>();
+    const noSection: ProductRow[] = [];
+    const switchedOff: ProductRow[] = [];
+    for (const p of rows) {
+      if (!p.is_active) {
+        switchedOff.push(p);
+      } else if (p.pricing_section_id && pricingSectionNameById.has(p.pricing_section_id)) {
+        const list = bySection.get(p.pricing_section_id) ?? [];
+        list.push(p);
+        bySection.set(p.pricing_section_id, list);
+      } else {
+        noSection.push(p);
+      }
+    }
+    const groups: ProductGroup[] = pricingSections.map((s) => ({
+      key: s.id,
+      label: s.name,
+      items: (bySection.get(s.id) ?? []).sort(compareProductPrice),
+    }));
+    groups.push({
+      key: "__no_section",
+      label: "No section",
+      items: noSection.sort(compareProductPrice),
+    });
+    groups.push({
+      key: SWITCHED_OFF_GROUP_KEY,
+      label: "Switched off",
+      items: switchedOff.sort(compareProductPrice),
+      collapsible: true,
+    });
+    return groups.filter((g) => g.items.length > 0);
+  }, [rows, pricingSections, pricingSectionNameById]);
 
   const flatSortedProducts = useMemo(() => {
-    if (sort === "category") return null;
+    if (sort === "section") return null;
     const sorted = [...rows];
     switch (sort) {
       case "price_asc":
-        sorted.sort((a, b) => a.price_zar - b.price_zar || compareProductName(a, b));
+        sorted.sort(compareProductPrice);
         break;
       case "price_desc":
         sorted.sort((a, b) => b.price_zar - a.price_zar || compareProductName(a, b));
@@ -843,19 +885,19 @@ function ProductsPage() {
               <SelectValue placeholder="Sort" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="category">By category (grouped)</SelectItem>
+              <SelectItem value="section">By section (grouped)</SelectItem>
               <SelectItem value="name_asc">Name A–Z (full list)</SelectItem>
               <SelectItem value="price_asc">Price — low to high (full list)</SelectItem>
               <SelectItem value="price_desc">Price — high to low (full list)</SelectItem>
             </SelectContent>
           </Select>
-          {sort === "category" ? (
+          {sort === "section" ? (
             <p className="text-xs text-muted-foreground">
-              Products are grouped by pricing area; A–Z within each group.
+              Products are grouped by pricing section; lowest price first within each group.
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              One list — sorted across every product, regardless of category.
+              One list — sorted across every product, regardless of section.
             </p>
           )}
         </div>
@@ -877,7 +919,7 @@ function ProductsPage() {
             <thead className="bg-[#e8efe3]/60">
               <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <th className="px-4 py-3 font-medium sm:px-5">Name</th>
-                <th className="px-4 py-3 font-medium sm:px-5">Category</th>
+                <th className="px-4 py-3 font-medium sm:px-5">Section</th>
                 <th className="px-4 py-3 font-medium sm:px-5">Price</th>
                 <th className="px-4 py-3 font-medium sm:px-5">Credits</th>
                 <th className="px-4 py-3 font-medium sm:px-5">Validity</th>
@@ -886,30 +928,53 @@ function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {sort === "category"
-                ? groupedProductSections.map((section) => (
-                    <Fragment key={section.label}>
-                      <tr className="border-t border-[#c5d4b8]/80 bg-[#e8efe3]/40">
-                        <td
-                          colSpan={7}
-                          className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider text-[#3d4f36] sm:px-5"
-                        >
-                          {section.label}
-                        </td>
-                      </tr>
-                      {section.items.map((p) => (
-                        <AdminProductTableRow
-                          key={p.id}
-                          product={p}
-                          sectionName={sectionNameFor(p)}
-                          togglingId={togglingId}
-                          onPersistActive={persistActive}
-                          onEdit={openEdit}
-                          onDelete={openDeleteDialog}
-                        />
-                      ))}
-                    </Fragment>
-                  ))
+              {sort === "section"
+                ? groupedProductSections.map((section) => {
+                    const collapsed = section.collapsible === true && !switchedOffOpen;
+                    const heading = `${section.label} (${section.items.length})`;
+                    return (
+                      <Fragment key={section.key}>
+                        <tr className="border-t border-[#c5d4b8]/80 bg-[#e8efe3]/40">
+                          <td
+                            colSpan={7}
+                            className="px-4 py-2 text-left text-xs font-bold uppercase tracking-wider text-[#3d4f36] sm:px-5"
+                          >
+                            {section.collapsible ? (
+                              <button
+                                type="button"
+                                onClick={() => setSwitchedOffOpen((o) => !o)}
+                                aria-expanded={!collapsed}
+                                className="inline-flex items-center gap-1.5 uppercase tracking-wider hover:underline"
+                              >
+                                <ChevronRight
+                                  className={cn(
+                                    "h-3.5 w-3.5 shrink-0 transition-transform",
+                                    !collapsed && "rotate-90",
+                                  )}
+                                  aria-hidden
+                                />
+                                {heading}
+                              </button>
+                            ) : (
+                              heading
+                            )}
+                          </td>
+                        </tr>
+                        {!collapsed &&
+                          section.items.map((p) => (
+                            <AdminProductTableRow
+                              key={p.id}
+                              product={p}
+                              sectionName={sectionNameFor(p)}
+                              togglingId={togglingId}
+                              onPersistActive={persistActive}
+                              onEdit={openEdit}
+                              onDelete={openDeleteDialog}
+                            />
+                          ))}
+                      </Fragment>
+                    );
+                  })
                 : (flatSortedProducts ?? []).map((p) => (
                     <AdminProductTableRow
                       key={p.id}
