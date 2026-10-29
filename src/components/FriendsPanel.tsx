@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,37 @@ export function FriendsPanel() {
   const [results, setResults] = useState<ProfileMini[]>([]);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [shareBookings, setShareBookings] = useState(false);
+  const [savingShare, setSavingShare] = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    void supabase
+      .from("profiles")
+      .select("share_bookings_with_friends")
+      .eq("id", userId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setShareBookings(Boolean((data as { share_bookings_with_friends?: boolean } | null)?.share_bookings_with_friends));
+      });
+  }, [userId]);
+
+  const toggleShare = async (next: boolean) => {
+    if (!userId) return;
+    setSavingShare(true);
+    setShareBookings(next);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ share_bookings_with_friends: next })
+      .eq("id", userId);
+    setSavingShare(false);
+    if (error) {
+      setShareBookings(!next);
+      toast.error(error.message);
+      return;
+    }
+    toast.success(next ? "Friends can now see the classes you book" : "Your bookings are hidden from friends");
+  };
 
   const refreshFriendships = useCallback(async (uid: string) => {
     const { data, error } = await supabase
@@ -260,6 +292,21 @@ export function FriendsPanel() {
 
   return (
     <Panel title="Friends">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">Show friends the classes I book</p>
+          <p className="text-xs text-muted-foreground">
+            Your friends see your first name on classes you&apos;re booked into. Turn it on to
+            see which classes your friends have booked too.
+          </p>
+        </div>
+        <Switch
+          checked={shareBookings}
+          disabled={savingShare || !userId}
+          onCheckedChange={(v) => void toggleShare(v)}
+          aria-label="Show friends the classes I book"
+        />
+      </div>
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
