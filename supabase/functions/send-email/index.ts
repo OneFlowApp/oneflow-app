@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { formatEmailDateTime } from "../_shared/studioFormat.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type TemplateName =
   | "booking_confirmation_class"
@@ -17,7 +18,9 @@ type TemplateName =
   | "waitlist_promoted";
 
 type RequestPayload = {
-  to: string;
+  to?: string;
+  /** Send to a member without the caller knowing their address (looked up on the server). */
+  to_profile_id?: string;
   template: TemplateName;
   data?: Record<string, unknown>;
 };
@@ -373,6 +376,82 @@ async function wrapHtml(content: string): Promise<string> {
 </html>`;
 }
 
+const STAFF_ROLES = ["director", "management", "marketing", "front_desk", "guide", "boh", "team"];
+const MEMBER_BLOCKED_TEMPLATES = new Set(["marketing", "user_invite"]);
+
+function jsonResponse(body: unknown, status: number) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+/**
+ * Who may send what:
+ * - the app's own server functions (service key): anything;
+ * - signed-in staff: anything;
+ * - signed-in members: only to their own email (booking confirmations and similar), or a
+ *   friend request to someone they have just sent a pending request to (address looked up here);
+ * - anyone else: refused.
+ * Returns the recipient address, or an error response.
+ */
+async function authoriseAndResolveRecipient(
+  req: Request,
+  body: RequestPayload,
+): Promise<any> {
+  const url = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+  const admin: any = createClient(url, serviceKey);
+
+  async function emailForProfile(id: string) {
+    const { data } = await admin.from("profiles").select("email").eq("id", id).maybeSingle();
+    return String((data as any)?.email ?? "").trim();
+  }
+
+  const auth = req.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  if (!token) return { error: jsonResponse({ error: "Not signed in" }, 401) };
+
+  const recipient = body.to_profile_id ? await emailForProfile(String(body.to_profile_id)) : String(body.to ?? "").trim();
+  if (!recipient) return { error: jsonResponse({ error: "No recipient" }, 400) };
+
+  // The app's own server functions.
+  if (serviceKey && token === serviceKey) return { to: recipient };
+
+  const userClient: any = createClient(url, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+  const { data: userData } = await userClient.auth.getUser();
+  const user = userData?.user;
+  if (!user) return { error: jsonResponse({ error: "Not signed in" }, 401) };
+
+  const { data: me } = await admin.from("profiles").select("role, secondary_roles, email").eq("id", user.id).maybeSingle();
+  const roles = [String((me as any)?.role ?? ""), ...(((me as any)?.secondary_roles ?? []) as string[])].map((r) =>
+    String(r).trim().toLowerCase(),
+  );
+  if (roles.some((r) => STAFF_ROLES.includes(r))) return { to: recipient };
+
+  // Members.
+  if (MEMBER_BLOCKED_TEMPLATES.has(body.template)) {
+    return { error: jsonResponse({ error: "Not allowed" }, 403) };
+  }
+  const ownEmails = [String(user.email ?? ""), String((me as any)?.email ?? "")]
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  if (ownEmails.includes(recipient.toLowerCase())) return { to: recipient };
+
+  if (body.template === "friend_request" && body.to_profile_id) {
+    const { data: ship } = await admin
+      .from("friendships")
+      .select("id")
+      .eq("requester_id", user.id)
+      .eq("addressee_id", String(body.to_profile_id))
+      .eq("status", "pending")
+      .limit(1);
+    if (ship && ship.length > 0) return { to: recipient };
+  }
+  return { error: jsonResponse({ error: "Not allowed" }, 403) };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -386,20 +465,20 @@ serve(async (req) => {
     }
 
     const body = (await req.json()) as RequestPayload;
-    if (!body?.to || !body?.template) {
-      return new Response(JSON.stringify({ error: "Missing to or template" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if ((!body?.to && !body?.to_profile_id) || !body?.template) {
+      return jsonResponse({ error: "Missing to or template" }, 400);
     }
+    const allowed = await authoriseAndResolveRecipient(req, body);
+    if (allowed.error) return allowed.error;
+    const toAddress = String(allowed.to);
 
     const { subject, content } = buildTemplate(body.template, body.data ?? {});
     const html = await wrapHtml(content);
     const logoAttachment = await getLogoAttachment();
 
-    const resendPayload: Record<string, unknown> = {
+    const resendPayload: any = {
       from: "One Flow <noreply@oneflow.co.za>",
-      to: [body.to],
+      to: [toAddress],
       subject,
       html,
     };
