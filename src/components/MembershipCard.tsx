@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { BadgeCheck, Copy, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
@@ -16,7 +17,11 @@ type Person = { first_name: string | null; last_name: string | null; avatar_url:
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
 /**
@@ -43,7 +48,11 @@ export function MembershipCard() {
           .select("id, title, description, link_url, discount_code")
           .eq("is_active", true)
           .order("sort_order", { ascending: true }),
-        supabase.from("profiles").select("first_name, last_name, avatar_url").eq("id", user.id).maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("first_name, last_name, avatar_url")
+          .eq("id", user.id)
+          .maybeSingle(),
       ]);
       if (cancelled) return;
       if (mRes.error) {
@@ -88,111 +97,135 @@ export function MembershipCard() {
           <span>
             <span className="block text-sm font-semibold text-[#3d4f36]">Your membership</span>
             <span className="block text-xs text-muted-foreground">
-              {perks.length > 0 ? `${perks.length} member perk${perks.length === 1 ? "" : "s"} · ` : ""}
+              {perks.length > 0
+                ? `${perks.length} member perk${perks.length === 1 ? "" : "s"} · `
+                : ""}
               Tap to show your card
             </span>
           </span>
         </span>
-        <span className="rounded-full bg-[#a3b693] px-3 py-1 text-xs font-semibold text-white">Show card</span>
+        <span className="rounded-full bg-[#a3b693] px-3 py-1 text-xs font-semibold text-white">
+          Show card
+        </span>
       </button>
 
-      {open ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Membership card"
-          className="fixed inset-0 z-[100] flex flex-col overflow-y-auto bg-[#2f3a2a] px-5 pb-8 pt-[max(1rem,env(safe-area-inset-top))] text-white"
-        >
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10"
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Membership card"
+              className="fixed inset-0 z-[200] flex flex-col overflow-y-auto bg-[#2f3a2a] px-5 pb-8 pt-[max(1rem,env(safe-area-inset-top))] text-white"
             >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className="mx-auto mt-2 w-full max-w-sm rounded-3xl bg-gradient-to-br from-[#a3b693] to-[#5f7a52] p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <img src={logo} alt="One Flow" className="h-10 w-auto brightness-0 invert" />
-              <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-                Member
-              </span>
-            </div>
-            <div className="mt-6 flex items-center gap-4">
-              {person?.avatar_url ? (
-                <img
-                  src={person.avatar_url}
-                  alt=""
-                  className="h-20 w-20 rounded-full border-2 border-white/70 object-cover"
-                />
-              ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/70 bg-white/15 text-2xl font-bold">
-                  {initials}
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="truncate font-display text-xl font-bold">{name}</p>
-                {membership.valid_until ? (
-                  <p className="text-sm text-white/85">Valid until {formatDate(membership.valid_until)}</p>
-                ) : null}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close"
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            </div>
-            {membership.pack_names && membership.pack_names.length > 0 ? (
-              <p className="mt-4 text-xs text-white/85">{membership.pack_names.join(" · ")}</p>
-            ) : null}
-            <p className="mt-5 text-center font-mono text-2xl tabular-nums tracking-wider" aria-live="off">
-              {now.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            </p>
-            <p className="text-center text-[11px] text-white/75">Live card · {now.toLocaleDateString("en-ZA")}</p>
-          </div>
 
-          {perks.length > 0 ? (
-            <div className="mx-auto mt-6 w-full max-w-sm">
-              <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/80">Membership perks</p>
-              <ul className="space-y-2">
-                {perks.map((p) => (
-                  <li key={p.id} className="rounded-xl bg-white/10 px-4 py-3">
-                    {p.link_url ? (
-                      <a
-                        href={p.link_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between gap-2 font-semibold underline-offset-2 hover:underline"
-                      >
-                        {p.title}
-                        <ExternalLink className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
-                      </a>
-                    ) : (
-                      <p className="font-semibold">{p.title}</p>
-                    )}
-                    {p.description ? <p className="text-sm text-white/80">{p.description}</p> : null}
-                    {p.discount_code ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard
-                            ?.writeText(p.discount_code ?? "")
-                            .then(() => toast.success("Discount code copied"))
-                            .catch(() => undefined);
-                        }}
-                        className="mt-2 inline-flex items-center gap-2 rounded-lg border border-dashed border-white/50 px-3 py-1.5 text-sm"
-                        aria-label={`Copy discount code ${p.discount_code}`}
-                      >
-                        <span className="text-white/75">Online code</span>
-                        <span className="font-mono font-semibold tracking-wider">{p.discount_code}</span>
-                        <Copy className="h-3.5 w-3.5 opacity-80" aria-hidden />
-                      </button>
+              <div className="mx-auto mt-2 w-full max-w-sm rounded-3xl bg-gradient-to-br from-[#a3b693] to-[#5f7a52] p-6 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <img src={logo} alt="One Flow" className="h-10 w-auto brightness-0 invert" />
+                  <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
+                    Member
+                  </span>
+                </div>
+                <div className="mt-6 flex items-center gap-4">
+                  {person?.avatar_url ? (
+                    <img
+                      src={person.avatar_url}
+                      alt=""
+                      className="h-20 w-20 rounded-full border-2 border-white/70 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-full border-2 border-white/70 bg-white/15 text-2xl font-bold">
+                      {initials}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-display text-xl font-bold">{name}</p>
+                    {membership.valid_until ? (
+                      <p className="text-sm text-white/85">
+                        Valid until {formatDate(membership.valid_until)}
+                      </p>
                     ) : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+                  </div>
+                </div>
+                {membership.pack_names && membership.pack_names.length > 0 ? (
+                  <p className="mt-4 text-xs text-white/85">{membership.pack_names.join(" · ")}</p>
+                ) : null}
+                <p
+                  className="mt-5 text-center font-mono text-2xl tabular-nums tracking-wider"
+                  aria-live="off"
+                >
+                  {now.toLocaleTimeString("en-ZA", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                  })}
+                </p>
+                <p className="text-center text-[11px] text-white/75">
+                  Live card · {now.toLocaleDateString("en-ZA")}
+                </p>
+              </div>
+
+              {perks.length > 0 ? (
+                <div className="mx-auto mt-6 w-full max-w-sm">
+                  <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/80">
+                    Membership perks
+                  </p>
+                  <ul className="space-y-2">
+                    {perks.map((p) => (
+                      <li key={p.id} className="rounded-xl bg-white/10 px-4 py-3">
+                        {p.link_url ? (
+                          <a
+                            href={p.link_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between gap-2 font-semibold underline-offset-2 hover:underline"
+                          >
+                            {p.title}
+                            <ExternalLink className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                          </a>
+                        ) : (
+                          <p className="font-semibold">{p.title}</p>
+                        )}
+                        {p.description ? (
+                          <p className="text-sm text-white/80">{p.description}</p>
+                        ) : null}
+                        {p.discount_code ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void navigator.clipboard
+                                ?.writeText(p.discount_code ?? "")
+                                .then(() => toast.success("Discount code copied"))
+                                .catch(() => undefined);
+                            }}
+                            className="mt-2 inline-flex items-center gap-2 rounded-lg border border-dashed border-white/50 px-3 py-1.5 text-sm"
+                            aria-label={`Copy discount code ${p.discount_code}`}
+                          >
+                            <span className="text-white/75">Online code</span>
+                            <span className="font-mono font-semibold tracking-wider">
+                              {p.discount_code}
+                            </span>
+                            <Copy className="h-3.5 w-3.5 opacity-80" aria-hidden />
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }
