@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { PricingSectionsPanel } from "@/components/admin/PricingSetupPanels";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
@@ -339,6 +340,7 @@ function ProductsPage() {
 
   const [accessGroups, setAccessGroups] = useState<AccessGroup[]>([]);
   const [pricingSections, setPricingSections] = useState<PricingSection[]>([]);
+  const [sectionsOpen, setSectionsOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -915,6 +917,29 @@ function ProductsPage() {
           </Button>
         }
       />
+
+      <div className="mb-4 rounded-2xl border border-border bg-card">
+        <button
+          type="button"
+          onClick={() => setSectionsOpen((o) => !o)}
+          aria-expanded={sectionsOpen}
+          className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold"
+        >
+          <ChevronRight
+            className={cn("h-4 w-4 transition-transform", sectionsOpen && "rotate-90")}
+            aria-hidden
+          />
+          Sections
+          <span className="font-normal text-muted-foreground">
+            · add, rename, reorder or hide (e.g. On The Mat, Staff)
+          </span>
+        </button>
+        {sectionsOpen ? (
+          <div className="border-t border-border p-3">
+            <PricingSectionsPanel onChanged={() => void loadLookups()} />
+          </div>
+        ) : null}
+      </div>
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5 sm:max-w-md">
