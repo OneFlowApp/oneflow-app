@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { DeletedMembersSection } from "@/components/admin/DeletedMembersSection";
 import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Filter, Loader2, Mail, MessageSquare, Package, Plus, Search, X } from "lucide-react";
@@ -335,6 +336,7 @@ function CustomersPage() {
   const [role, setRole] = useState("customer");
 
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [deletedKey, setDeletedKey] = useState(0);
   const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
   const [sendEmailOpen, setSendEmailOpen] = useState(false);
   const [sendEmailTarget, setSendEmailTarget] = useState<SendMemberEmailTarget | null>(null);
@@ -376,6 +378,7 @@ function CustomersPage() {
       .select(
         "id, first_name, last_name, email, phone, role, secondary_roles, is_active, created_at, waiver_accepted_at",
       )
+      .is("deleted_at", null)
       .order("first_name", { ascending: true });
 
     if (pErr) {
@@ -816,13 +819,20 @@ function CustomersPage() {
         </p>
       ) : null}
 
+      {canManageCustomers ? (
+        <DeletedMembersSection refreshKey={deletedKey} onOpenMember={openProfileSheet} />
+      ) : null}
+
       <CustomerProfileSheet
         customerId={sheetCustomerId}
         open={sheetOpen}
         onOpenChange={closeProfileSheet}
         viewerRole={viewerRole}
         variant="customer"
-        onProfileUpdated={() => void load()}
+        onProfileUpdated={() => {
+          void load();
+          setDeletedKey((k) => k + 1);
+        }}
       />
 
       <SendMemberEmailDialog
