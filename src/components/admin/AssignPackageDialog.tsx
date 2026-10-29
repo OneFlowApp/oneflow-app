@@ -126,6 +126,7 @@ type ProductPick = {
   credit_count: number | null;
   validity_days: number | null;
   allowed_class_types: string[] | null;
+  is_active?: boolean;
 };
 
 const CUSTOM_CATEGORY_ITEMS: { value: CreditCategoryOrdered; label: string }[] =
@@ -387,8 +388,8 @@ export function AssignPackageDialog({
       setProductsLoading(true);
       let query = supabase
         .from("products")
-        .select("id, name, credit_count, category, validity_days, allowed_class_types, is_addon")
-        .eq("is_active", true)
+        .select("id, name, credit_count, category, validity_days, allowed_class_types, is_addon, is_active")
+        // Staff packs and saved custom packages are switched off for sale but still assignable.
         .order("sort_order", { ascending: true })
         .order("category", { ascending: true })
         .order("name", { ascending: true });
@@ -411,6 +412,7 @@ export function AssignPackageDialog({
             credit_count: raw.credit_count == null ? null : Number(raw.credit_count),
             validity_days: raw.validity_days == null ? null : Number(raw.validity_days),
             allowed_class_types: normalizeClassTypes(raw.allowed_class_types),
+            is_active: raw.is_active !== false,
           })),
         );
       }
@@ -642,6 +644,19 @@ export function AssignPackageDialog({
     }
     const { purchasedAt, expiresAt } = period;
 
+    // Packs built in Admin → Products with several included items get one balance per item,
+    // the same as when the pack is bought online.
+    const { data: allowanceData } = await supabase
+      .from("product_allowances")
+      .select("label, class_types, credits, sort_order")
+      .eq("product_id", product.id)
+      .order("sort_order", { ascending: true });
+    const allowances = ((allowanceData ?? []) as {
+      label: string | null;
+      class_types: string[] | null;
+      credits: number | null;
+    }[]).filter((x) => (x.class_types ?? []).length > 0);
+
     for (const t of assignees) {
       if (!isUuidProfileId(t.profileId)) {
         recordPackageAssignFailure(
@@ -661,7 +676,25 @@ export function AssignPackageDialog({
         );
         continue;
       }
-      const baseCreditRows = buildProductCreditRows({
+      const baseCreditRows = allowances.length > 1
+        ? allowances.flatMap((al) => {
+            const c = Math.max(1, Math.trunc(Number(al.credits) || 1));
+            const unl = c >= UNLIMITED_PRODUCT_THRESHOLD;
+            return buildProductCreditRows({
+              productName: `${product.name} - ${al.label?.trim() || "Included"}`,
+              profileId: t.profileId,
+              productId: product.id,
+              expiresAt,
+              paymentId: "manual_assignment",
+              purchasedAt,
+              category: product.category ?? "yoga",
+              allowedClassTypes: al.class_types ?? [],
+              creditsTotal: c,
+              creditsRemaining: c,
+              isUnlimited: unl,
+            });
+          })
+        : buildProductCreditRows({
         productName: product.name,
         profileId: t.profileId,
         productId: product.id,
@@ -1066,6 +1099,249 @@ export function AssignPackageDialog({
               </TabsList>
 
               <TabsContent value="existing" className="space-y-4 pt-2">
+                <div className="grid gap-2">
+                  <Label>Category</Label>
+                  {productsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading products…</p>
+                  ) : (
+                    <Select
+                      value={existingCategory || undefined}
+                      onValueChange={(v) => {
+                        setExistingCategory(v);
+                        setSelectedProductId("");
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {existingCategoryOptions.map((slug) => (
+                          <SelectItem key={slug} value={slug}>
+                            {PRODUCT_CATEGORY_SLUG_LABEL[slug] ?? slug}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="grid gap-2">
+                  <Label>Product</Label>
+                  {productsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading products…</p>
+                  ) : !existingCategory ? (
+                    <p className="text-sm text-muted-foreground">Choose a category first.</p>
+                  ) : productsInSelectedCategory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No products in this category.</p>
+                  ) : (
+                    <Select
+                      value={selectedProductId || undefined}
+                      onValueChange={setSelectedProductId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {productsInSelectedCategory.map((p) => {
+                          const cc =
+                            p.credit_count == null
+                              ? "—"
+                              : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
+                                ? "Unlimited"
+                                : String(p.credit_count);
+                          return (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name} · {cc} credits
+                              {p.is_active === false ? " · not on sale" : ""}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <PackagePeriodFields
+                  idPrefix="assign-existing"
+                  startDate={assignStartDate}
+                  endDate={assignEndDate}
+                  onStartChange={setAssignStartDate}
+                  onEndChange={setAssignEndDate}
+                />
+                {isBundleAssign && selectedProduct ? (
+                  <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                    <div>
+                      <p className="text-sm font-medium">Included with this package</p>
+                      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                        {bundlePreviewRows.map((row) => (
+                          <li key={row.product_name}>
+                            <span className="font-medium text-foreground">{row.product_name}</span>
+                            {" · "}
+                            {bundleRowSummary(row)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="border-t border-border pt-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium">Extra components (optional)</p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1 text-xs"
+                          onClick={() =>
+                            setBundleExtras((prev) => [...prev, newBundleExtraDraft("cafe")])
+                          }
+                        >
+                          <Plus className="h-3 w-3 shrink-0" aria-hidden />
+                          Add component
+                        </Button>
+                      </div>
+                      {bundleExtras.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          e.g. +10 café credits, extra Wellzone, mat or towel on top of the bundle.
+                        </p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {bundleExtras.map((extra) => {
+                            const accessOnly = extra.kind === "mat" || extra.kind === "towel";
+                            return (
+                              <li
+                                key={extra.id}
+                                className="grid gap-2 rounded-md border border-border bg-background/80 p-2 sm:grid-cols-[1fr_88px_auto_auto]"
+                              >
+                                <Select
+                                  value={extra.kind}
+                                  onValueChange={(v) => {
+                                    const kind = v as BundleComponentKind;
+                                    setBundleExtras((prev) =>
+                                      prev.map((row) =>
+                                        row.id === extra.id
+                                          ? {
+                                              ...row,
+                                              kind,
+                                              unlimited:
+                                                kind === "mat" ||
+                                                kind === "towel" ||
+                                                row.unlimited,
+                                            }
+                                          : row,
+                                      ),
+                                    );
+                                  }}
+                                >
+                                  <SelectTrigger className="h-9">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {BUNDLE_COMPONENT_OPTIONS.map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {!accessOnly && !extra.unlimited ? (
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    className="h-9"
+                                    value={extra.credits}
+                                    onChange={(e) =>
+                                      setBundleExtras((prev) =>
+                                        prev.map((row) =>
+                                          row.id === extra.id
+                                            ? { ...row, credits: e.target.value }
+                                            : row,
+                                        ),
+                                      )
+                                    }
+                                    aria-label="Credits"
+                                  />
+                                ) : (
+                                  <span className="flex h-9 items-center text-xs text-muted-foreground">
+                                    {accessOnly ? "Access" : "∞"}
+                                  </span>
+                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <Switch
+                                    id={`extra-unlimited-${extra.id}`}
+                                    checked={extra.unlimited || accessOnly}
+                                    disabled={accessOnly}
+                                    onCheckedChange={(v) =>
+                                      setBundleExtras((prev) =>
+                                        prev.map((row) =>
+                                          row.id === extra.id ? { ...row, unlimited: v } : row,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  <Label
+                                    htmlFor={`extra-unlimited-${extra.id}`}
+                                    className="text-xs"
+                                  >
+                                    Unlimited
+                                  </Label>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 shrink-0 text-destructive"
+                                  aria-label="Remove extra component"
+                                  onClick={() =>
+                                    setBundleExtras((prev) =>
+                                      prev.filter((row) => row.id !== extra.id),
+                                    )
+                                  }
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="grid gap-2">
+                  <Label htmlFor="assign-existing-note">Optional note</Label>
+                  <Textarea
+                    id="assign-existing-note"
+                    value={existingNote}
+                    onChange={(e) => setExistingNote(e.target.value)}
+                    rows={2}
+                    placeholder="Shown in the member email if provided"
+                  />
+                </div>
+                <DialogFooter className="gap-2 sm:gap-0">
+                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={
+                      submitting || productsLoading || !existingCategory || !selectedProductId
+                    }
+                    className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                    onClick={() => openAssignConfirm("existing")}
+                  >
+                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                    Assign
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+
+              <TabsContent value="custom" className="space-y-4 pt-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="assign-custom-name">Package name</Label>
+                  <Input
+                    id="assign-custom-name"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Guest pass"
+                  />
+                </div>
                 <div className="grid gap-2">
                   <Label>What's included</Label>
                   <p className="text-xs text-muted-foreground">
