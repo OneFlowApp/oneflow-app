@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { formatEmailDateTime } from "../_shared/studioFormat.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type TemplateName =
@@ -24,6 +23,21 @@ type RequestPayload = {
   template: TemplateName;
   data?: Record<string, unknown>;
 };
+
+// Date helpers kept in this file so it deploys on its own from the Supabase editor
+// (the editor does not include the shared folder).
+const STUDIO_TIMEZONE = "Africa/Johannesburg";
+
+function formatEmailDateTime(value: unknown) {
+  const raw = String(value ?? "");
+  const dt = raw ? new Date(raw) : new Date();
+  return {
+    date: dt.toLocaleDateString("en-ZA", { weekday: "short", day: "numeric", month: "long", timeZone: STUDIO_TIMEZONE }),
+    time: dt
+      .toLocaleTimeString("en-ZA", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: STUDIO_TIMEZONE })
+      .toUpperCase(),
+  };
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
