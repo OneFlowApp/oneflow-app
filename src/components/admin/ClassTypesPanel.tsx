@@ -5,8 +5,10 @@
  * render time from category + type and nothing copies the name into `public.classes`.
  * Renaming "Power" retitles all 30 scheduled Power classes with a single row update.
  *
- * Types are retired with `is_active`, never deleted: `guides.disciplines` stores these
- * slugs, so deleting one orphans guide records. There is no DELETE grant on the table.
+ * Types are retired with `is_active`. "Delete" hides a type from this list for good (it sets
+ * `deleted_at` and switches it off) but keeps the row: past classes, bookings and
+ * `guides.disciplines` still point at it. Deleted types can be restored. There is no DELETE
+ * grant on the table.
  *
  * Categories are seeded (Yoga, Sculpt, Pilates, Wellzone, Events) and may be added
  * only by inheriting an existing category's `legacy_class_type`, so credit rules stay
@@ -15,7 +17,7 @@
  * be created from this dialog.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { ChevronRight, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -30,6 +32,16 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { CategoryPicker } from "@/components/admin/CategoryPicker";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -81,6 +93,11 @@ export function ClassTypesPanel({ canManage }: Props) {
   const [saving, setSaving] = useState(false);
   /** Type id whose is_active switch is mid-write. */
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  /** Type waiting for the delete confirmation. */
+  const [deleteRow, setDeleteRow] = useState<ClassTypeRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
   const categories = useMemo(
     () =>
@@ -95,10 +112,18 @@ export function ClassTypesPanel({ canManage }: Props) {
       categories.map((category) => ({
         category,
         types: catalog.types
-          .filter((t) => t.category_id === category.id)
+          .filter((t) => t.category_id === category.id && !t.deleted_at)
           .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
       })),
     [categories, catalog.types],
+  );
+
+  const deletedTypes = useMemo(
+    () =>
+      catalog.types
+        .filter((t) => Boolean(t.deleted_at))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [catalog.types],
   );
 
   const takenSlugs = useMemo(
@@ -234,6 +259,43 @@ export function ClassTypesPanel({ canManage }: Props) {
     await reload();
   };
 
+  const confirmDelete = async () => {
+    if (!canManage || !deleteRow) return;
+    setDeleting(true);
+    const { error } = await supabase
+      .from("class_types")
+      .update({ is_active: false, deleted_at: new Date().toISOString() })
+      .eq("id", deleteRow.id);
+    setDeleting(false);
+    if (error) {
+      console.error("class type delete failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not delete class type"));
+      return;
+    }
+    toast.success(`“${deleteRow.name}” deleted. You can restore it under Deleted types.`);
+    setDeleteRow(null);
+    setDialogOpen(false);
+    setEditingId(null);
+    await reload();
+  };
+
+  const restore = async (row: ClassTypeRow) => {
+    if (!canManage) return;
+    setRestoringId(row.id);
+    const { error } = await supabase
+      .from("class_types")
+      .update({ deleted_at: null })
+      .eq("id", row.id);
+    setRestoringId(null);
+    if (error) {
+      console.error("class type restore failed", error);
+      toast.error(supabaseErrorMessage(error, "Could not restore class type"));
+      return;
+    }
+    toast.success(`“${row.name}” restored. Switch it on when you want to use it again.`);
+    await reload();
+  };
+
   if (!ready) {
     return (
       <div className="space-y-3">
@@ -260,8 +322,9 @@ export function ClassTypesPanel({ canManage }: Props) {
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Renaming a type retitles every class of that type. Retire a type with its switch —
-          types are never deleted, because guide records reference them.
+          Renaming a type retitles every class of that type. Switch a type off to pause it, or
+          open it and press Delete to remove an old type from this list. Past classes keep
+          their name.
         </p>
         {canManage ? (
           <Button
@@ -360,6 +423,81 @@ export function ClassTypesPanel({ canManage }: Props) {
           </section>
         ))}
       </div>
+
+      {deletedTypes.length > 0 ? (
+        <section className="mt-6 rounded-xl border border-border bg-card">
+          <button
+            type="button"
+            onClick={() => setShowDeleted((o) => !o)}
+            aria-expanded={showDeleted}
+            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm font-semibold"
+          >
+            <ChevronRight
+              className={cn("h-4 w-4 transition-transform", showDeleted && "rotate-90")}
+              aria-hidden
+            />
+            Deleted types
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+              {deletedTypes.length}
+            </span>
+          </button>
+          {showDeleted ? (
+            <ul className="divide-y divide-border border-t border-border">
+              {deletedTypes.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {(catalog.categoryById.get(t.category_id)?.name ?? "Class") + ": " + t.name}
+                  </span>
+                  {canManage ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="gap-1.5"
+                      disabled={restoringId === t.id}
+                      onClick={() => void restore(t)}
+                    >
+                      {restoringId === t.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                      )}
+                      Restore
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+
+      <AlertDialog open={deleteRow !== null} onOpenChange={(o) => !deleting && !o && setDeleteRow(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{deleteRow?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription className="text-left">
+              It disappears from this list and can no longer be scheduled. Classes already on the
+              schedule and past bookings keep their name. You can restore it later under Deleted
+              types.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmDelete();
+              }}
+            >
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Delete type
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={dialogOpen}
@@ -467,6 +605,18 @@ export function ClassTypesPanel({ canManage }: Props) {
             ) : null}
           </div>
           <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            {editingRow && canManage ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 sm:mr-auto"
+                onClick={() => setDeleteRow(editingRow)}
+              >
+                <Trash2 className="h-4 w-4" aria-hidden />
+                Delete
+              </Button>
+            ) : null}
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
