@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { MembershipCard } from "@/components/MembershipCard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -214,6 +215,7 @@ function MePage() {
 
       <main className="flex flex-1 flex-col px-5 pt-3 pb-6">
         <OutstandingFeesCard />
+        <MembershipCard />
         <nav className="flex shrink-0 items-stretch gap-0.5 rounded-t-xl border-b-2 border-border/60 bg-muted/50 px-0.5 pt-1">
           {TABS.map(({ id, label, icon: Icon }) => {
             const active = tab === id;
