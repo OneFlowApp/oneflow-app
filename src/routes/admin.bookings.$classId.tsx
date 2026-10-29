@@ -23,7 +23,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
+import { cancelBookingWithPolicy, cancellationOutcomeMessage } from "@/lib/bookingCancellation";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { manualCheckInToastMessage } from "@/lib/flowPoints";
 import {
@@ -273,11 +273,7 @@ function BookingClassDetailPage() {
         cancellationReason: "admin_cancelled",
         waiveLateFee,
       });
-      toast.success(
-        res.lateCancel && !res.waived
-          ? "Booking removed. Late cancellation fee pending."
-          : "Booking removed and credit returned.",
-      );
+      toast.success(cancellationOutcomeMessage(res, "member"));
       setRemoveTarget(null);
       setWaiveLateFee(false);
       await load();

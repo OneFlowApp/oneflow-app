@@ -11,7 +11,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { cancelBookingWithPolicy } from "@/lib/bookingCancellation";
+import { cancelBookingWithPolicy, cancellationOutcomeMessage } from "@/lib/bookingCancellation";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -38,11 +38,7 @@ export function CancelBookingButton({
         bookingId,
         cancellationReason: "customer_cancelled",
       });
-      toast.success(
-        result.lateCancel
-          ? "Booking cancelled. Late cancellation fee will apply on next transaction."
-          : "Booking cancelled. Credit returned.",
-      );
+      toast.success(cancellationOutcomeMessage(result, "you"));
       setOpen(false);
       await onCancelled?.();
     } catch (error) {
@@ -79,10 +75,15 @@ export function CancelBookingButton({
             <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-left text-sm text-muted-foreground">
-                <p>Cancellations more than 2 hours before class: your credit will be returned.</p>
+                <p>More than 2 hours before class: free, your credit is returned.</p>
                 <p>
-                  Late cancellations (within 2 hours): your credit will be returned, but a R100
-                  fee applies on your next transaction.
+                  Class packs, between 2 hours and 1 hour before: a late fee applies. Pay it within
+                  24 hours to keep your credit.
+                </p>
+                <p>Class packs, less than 1 hour before: the credit is used.</p>
+                <p>
+                  Memberships, within 2 hours: a late fee applies and you can book again once it is
+                  paid.
                 </p>
               </div>
             </AlertDialogDescription>
