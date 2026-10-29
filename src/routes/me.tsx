@@ -20,11 +20,7 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { FriendsPanel } from "@/components/FriendsPanel";
-import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
-import {
-  summarizeMemberCreditTypes,
-  type MemberCreditRow,
-} from "@/lib/memberCreditBalance";
+import { MemberPassesPanel } from "@/components/MemberPassesPanel";
 import { MessageStudioButton } from "@/components/MessageStudioSheet";
 import { OutstandingFeesCard } from "@/components/OutstandingFeesCard";
 import { formatRand } from "@/lib/format";
@@ -501,13 +497,7 @@ function BillingPanel() {
   const [rows, setRows] = useState<
     { id: string; name: string; date: string; amountZar: number; source: string }[]
   >([]);
-  const [creditRows, setCreditRows] = useState<MemberCreditRow[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const creditTypeBalances = useMemo(
-    () => summarizeMemberCreditTypes(creditRows),
-    [creditRows],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -517,29 +507,21 @@ function BillingPanel() {
       if (!user) {
         if (!cancelled) {
           setRows([]);
-          setCreditRows([]);
           setLoading(false);
         }
         return;
       }
 
-      const [creditsRes, purchasesRes] = await Promise.all([
-        supabase
-          .from("user_credits")
-          .select("credits_remaining, is_unlimited, expires_at, category, mat_access, towel_access")
-          .eq("profile_id", user.id),
-        supabase
-          .from("user_credits")
-          .select("id, created_at, product_name, yoco_payment_id, product:product_id ( name, price_zar )")
-          .eq("profile_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(40),
-      ]);
+      const purchasesRes = await supabase
+        .from("user_credits")
+        .select(
+          "id, created_at, product_name, yoco_payment_id, amount_paid_zar, product:product_id ( name, price_zar )",
+        )
+        .eq("profile_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(40);
 
       if (cancelled) return;
-
-      if (creditsRes.error) console.error(creditsRes.error);
-      setCreditRows((creditsRes.data ?? []) as MemberCreditRow[]);
 
       const data = purchasesRes.data;
       const error = purchasesRes.error;
@@ -556,7 +538,9 @@ function BillingPanel() {
           | null;
         const name =
           String(raw.product_name ?? "").trim() || prod?.name?.trim() || "Pass / credits";
-        const amountZar = Number(prod?.price_zar ?? 0) || 0;
+        // What they actually paid (includes upgrades and member price); older rows fall back to the list price.
+        const paid = Number(raw.amount_paid_zar);
+        const amountZar = Number.isFinite(paid) && paid > 0 ? paid : Number(prod?.price_zar ?? 0) || 0;
         const dt = typeof raw.created_at === "string" ? raw.created_at : "";
         const dateLabel = dt ? formatStudioDateShort(dt, { year: true }) : "—";
         const yoco = raw.yoco_payment_id;
@@ -581,7 +565,7 @@ function BillingPanel() {
 
   return (
     <Panel title="Billing history">
-      <MemberCreditTypesPanel balances={creditTypeBalances} compact />
+      <MemberPassesPanel compact />
       <div className="mb-4 mt-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
           Passes and credit grants linked to your account (checkout and in-studio).
