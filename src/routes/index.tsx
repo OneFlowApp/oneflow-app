@@ -9,7 +9,7 @@ import { movementChallengeTotalDays } from "@/lib/movementChallenge";
 import { CancelBookingButton } from "@/components/CancelBookingButton";
 import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
 import { HomeEventCard } from "@/components/HomeEventCard";
-import { MemberCreditTypesPanel } from "@/components/MemberCreditTypesPanel";
+import { MemberPassesPanel } from "@/components/MemberPassesPanel";
 import { homeEventCardVisible } from "@/lib/homeEventCard";
 import {
   activeMatAccessLabels,
@@ -63,7 +63,6 @@ function HomePage() {
   const { data: home, isLoading } = useHomePage(user?.id);
 
   const firstName = home?.firstName ?? null;
-  const creditTypeBalances = home?.creditTypeBalances ?? [];
   const cafeCreditTotal = home?.cafeCreditTotal ?? 0;
   const cafeUnlimited = home?.cafeUnlimited ?? false;
   const matTowelRows = home?.matTowelRows ?? [];
@@ -302,7 +301,7 @@ function HomePage() {
           </section>
         ) : null}
 
-        <MemberCreditTypesPanel balances={creditTypeBalances} />
+        <MemberPassesPanel />
 
         {(challengeConfig && homeSpotlightCardVisible(challengeConfig)) ||
         (homeEventCard && homeEventCardVisible(homeEventCard)) ? (
