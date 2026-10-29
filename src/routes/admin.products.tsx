@@ -63,6 +63,7 @@ type ProductRow = {
   member_price_zar: number | null;
   mat_included: boolean;
   shower_towel_included: boolean;
+  offer_with_section_ids: string[];
 };
 
 type AccessGroup = {
@@ -331,6 +332,8 @@ function ProductsPage() {
   const [memberPriceZar, setMemberPriceZar] = useState("");
   const [matIncluded, setMatIncluded] = useState(false);
   const [showerTowelIncluded, setShowerTowelIncluded] = useState(false);
+  /** Sections whose purchases offer this product as a monthly add-on. Empty = not an add-on. */
+  const [offerSectionIds, setOfferSectionIds] = useState<string[]>([]);
   const [allowanceItems, setAllowanceItems] = useState<AllowanceItem[]>(() => [newAllowanceItem()]);
   const [allowancesLoading, setAllowancesLoading] = useState(false);
 
@@ -342,7 +345,7 @@ function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included",
+        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_section_ids",
       )
       .order("category", { ascending: true })
       .order("name", { ascending: true });
@@ -374,6 +377,9 @@ function ProductsPage() {
       member_price_zar: nullableNumber(raw.member_price_zar),
       mat_included: Boolean(raw.mat_included),
       shower_towel_included: Boolean(raw.shower_towel_included),
+      offer_with_section_ids: Array.isArray(raw.offer_with_section_ids)
+        ? (raw.offer_with_section_ids as unknown[]).map(String)
+        : [],
     }));
 
     setRows(mapped);
@@ -498,6 +504,7 @@ function ProductsPage() {
     setMemberPriceZar(d.memberPriceZar);
     setMatIncluded(d.matIncluded);
     setShowerTowelIncluded(d.showerTowelIncluded);
+    setOfferSectionIds([]);
     setAllowanceItems([newAllowanceItem()]);
   }, []);
 
@@ -514,6 +521,7 @@ function ProductsPage() {
     setMemberPriceZar(p.member_price_zar == null ? "" : String(p.member_price_zar));
     setMatIncluded(p.mat_included);
     setShowerTowelIncluded(p.shower_towel_included);
+    setOfferSectionIds(p.offer_with_section_ids ?? []);
   }, []);
 
   /** Loads the pack's `product_allowances` rows into the "What's included" builder. */
@@ -673,16 +681,17 @@ function ProductsPage() {
       return;
     }
 
-    if (allowancesLoading) {
+    const isOfferAddon = offerSectionIds.length > 0;
+    if (allowancesLoading && !isOfferAddon) {
       toast.error("Included items are still loading");
       return;
     }
-    if (allowanceItems.length === 0) {
+    if (!isOfferAddon && allowanceItems.length === 0) {
       toast.error("Add at least one included item");
       return;
     }
     const allowancePayload: { label: string; group_ids: string[]; credits: number }[] = [];
-    for (const [i, it] of allowanceItems.entries()) {
+    for (const [i, it] of (isOfferAddon ? [] : allowanceItems).entries()) {
       const label = it.label.trim();
       if (!label) {
         toast.error(`Included item ${i + 1} needs a label`);
@@ -708,7 +717,8 @@ function ProductsPage() {
     const tickedGroups = accessGroups.filter((g) => tickedGroupIds.has(g.id));
     // Legacy fields kept in sync so older screens keep working.
     const allowedPayload = toPgTextArray([...new Set(tickedGroups.flatMap((g) => g.class_types))]);
-    const creditCount = allowancePayload[0].credits;
+    // Monthly add-ons give access (mat, towels) only, never class credits.
+    const creditCount = isOfferAddon ? 0 : allowancePayload[0].credits;
 
     const existingRow = editingId ? rows.find((r) => r.id === editingId) : null;
 
@@ -727,6 +737,7 @@ function ProductsPage() {
       member_price_zar: memberPrice,
       mat_included: matIncluded,
       shower_towel_included: showerTowelIncluded,
+      offer_with_section_ids: offerSectionIds,
     };
 
     setSaving(true);
@@ -756,7 +767,7 @@ function ProductsPage() {
         .from("products")
         .insert({
           ...commonPayload,
-          category: allWellzone ? "wellzone" : "yoga",
+          category: isOfferAddon ? "mat_towel" : allWellzone ? "wellzone" : "yoga",
           is_staff_only: false,
           sort_order: 0,
         })
@@ -823,6 +834,8 @@ function ProductsPage() {
         return false;
       }
     }
+
+    if (items.length === 0) return true;
 
     const { error: insError } = await supabase.from("product_allowances").insert(
       items.map((it, i) => ({
@@ -1208,7 +1221,43 @@ function ProductsPage() {
               </div>
             )}
 
-            <div>
+            <div className="rounded-lg border border-border bg-muted/15 px-3 py-2.5">
+              <Label className="text-foreground">Offer as a monthly add-on</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                When someone buys a product from a ticked section, they&apos;re asked
+                &ldquo;Would you like to add {name.trim() || "this"}?&rdquo; before paying.
+                Add-ons give mat or towel access only, no class credits.
+              </p>
+              {pricingSections.length === 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">No pricing sections yet.</p>
+              ) : (
+                <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {pricingSections.map((sec) => {
+                    const id = `offer-section-${sec.id}`;
+                    return (
+                      <li key={sec.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={id}
+                          checked={offerSectionIds.includes(sec.id)}
+                          onCheckedChange={(c) =>
+                            setOfferSectionIds((prev) =>
+                              c === true
+                                ? [...new Set([...prev, sec.id])]
+                                : prev.filter((x) => x !== sec.id),
+                            )
+                          }
+                        />
+                        <label htmlFor={id} className="text-sm leading-none">
+                          {sec.name}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+
+            <div className={cn(offerSectionIds.length > 0 && "hidden")}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <Label>What&apos;s included</Label>

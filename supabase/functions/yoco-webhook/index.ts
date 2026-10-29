@@ -82,6 +82,36 @@ function buildAllowanceRows(p: Product, profileId: string, paymentId: string, no
   });
 }
 
+/**
+ * Monthly add-ons (mat & towel storage, shower towel service): access only, never class credits.
+ * Used for add-ons bought alongside a pack, and for any product set up to be offered as an add-on.
+ */
+function buildAddonRows(p: any, profileId: string, paymentId: string, now: Date) {
+  const days = Number(p.validity_days) > 0 ? Number(p.validity_days) : 30;
+  const n = String(p.name ?? "").toLowerCase();
+  const mat = Boolean(p.mat_included) || n.includes("mat");
+  const towel = Boolean(p.shower_towel_included) || (!mat && n.includes("towel"));
+  return [{
+    profile_id: profileId,
+    product_id: p.id,
+    product_name: p.name,
+    category: "mat_towel",
+    allowed_class_types: [],
+    credits_total: 0,
+    credits_remaining: 0,
+    is_unlimited: false,
+    expires_at: new Date(now.getTime() + days * 86400000).toISOString(),
+    yoco_payment_id: paymentId,
+    purchased_at: now.toISOString(),
+    mat_access: mat,
+    towel_access: towel,
+  }];
+}
+
+function isOfferedAddon(p: any): boolean {
+  return Array.isArray(p.offer_with_section_ids) && p.offer_with_section_ids.length > 0;
+}
+
 function escapeHtml(v: unknown): string {
   return String(v ?? "").replace(/[&<>"']/g, (c) => (({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }) as any)[c]);
 }
@@ -279,7 +309,7 @@ serve(async (req) => {
 
   const { data: pack, error: packErr } = await supabase
     .from("products")
-    .select("id, name, category, allowed_class_types, credit_count, validity_days, access_scope, mat_included, shower_towel_included, product_allowances(label, class_types, credits, sort_order)")
+    .select("id, name, category, allowed_class_types, credit_count, validity_days, access_scope, mat_included, shower_towel_included, offer_with_section_ids, product_allowances(label, class_types, credits, sort_order)")
     .eq("id", packId)
     .maybeSingle();
   if (packErr) {
@@ -293,9 +323,24 @@ serve(async (req) => {
 
   const product = pack as Product;
   const now = new Date();
-  const rows: any[] = (product.product_allowances?.length ?? 0) > 0
-    ? buildAllowanceRows(product, profileId, paymentId, now)
-    : buildCreditRows(product, profileId, paymentId, now);
+  const rows: any[] = isOfferedAddon(product)
+    ? buildAddonRows(product, profileId, paymentId, now)
+    : (product.product_allowances?.length ?? 0) > 0
+      ? buildAllowanceRows(product, profileId, paymentId, now)
+      : buildCreditRows(product, profileId, paymentId, now);
+  const mainRowCount = rows.length;
+
+  // Monthly add-ons bought in the same payment.
+  const addonIds = String(metadata.addon_ids ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (addonIds.length > 0) {
+    const { data: addonProducts } = await supabase
+      .from("products")
+      .select("id, name, validity_days, mat_included, shower_towel_included")
+      .in("id", addonIds);
+    for (const a of (addonProducts ?? []) as any[]) {
+      rows.push(...buildAddonRows(a, profileId, paymentId, now));
+    }
+  }
 
   const upgraded = metadata.open_access_upgrade === true || metadata.open_access_upgrade === "true";
   const upgradeAmount = Number(metadata.upgrade_amount_zar ?? 0) || 0;
@@ -303,6 +348,12 @@ serve(async (req) => {
   const paidMeta = Number(metadata.amount_paid_zar);
   const paidZar = Number.isFinite(paidMeta) && paidMeta > 0 ? paidMeta : null;
   rows.forEach((r, i) => {
+    if (i >= mainRowCount) {
+      r.access_scope = "longkloof";
+      r.paid_at_studio = "longkloof";
+      r.entry_type = "purchase";
+      return;
+    }
     r.access_scope = isOpenAccess ? "open_access" : "longkloof";
     r.paid_at_studio = "longkloof";
     r.entry_type = "purchase";
@@ -357,7 +408,7 @@ serve(async (req) => {
       "Email": w.email ?? "",
       "Phone": w.phone ?? "",
       "Pack": product.name,
-      "Includes": rows.map((r) => `${r.product_name}: ${r.is_unlimited ? "Unlimited" : r.credits_total}`).join("; "),
+      "Includes": rows.slice(0, mainRowCount).map((r) => `${r.product_name}: ${r.is_unlimited ? "Unlimited" : r.credits_total}`).join("; "),
       "Open Access upgrade": upgraded ? `Yes (+R${upgradeAmount})` : "No, Open Access pack",
       "Amount paid": paidZar !== null ? `R${paidZar.toFixed(2)}` : "",
       "Purchased": now.toISOString().slice(0, 16).replace("T", " ") + " UTC",

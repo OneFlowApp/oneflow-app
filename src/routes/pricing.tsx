@@ -4,6 +4,15 @@ import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
@@ -70,6 +79,17 @@ type ProductRow = {
   member_price_zar: number | null;
   mat_included: boolean | null;
   shower_towel_included: boolean | null;
+};
+
+/** A monthly add-on offered at checkout (Admin → Products → "Offer as a monthly add-on"). */
+type AddonOffer = {
+  id: string;
+  name: string;
+  description: string | null;
+  price_zar: number;
+  mat_included: boolean | null;
+  shower_towel_included: boolean | null;
+  offer_with_section_ids: string[];
 };
 
 function formatPriceZar(zar: number) {
@@ -139,6 +159,10 @@ function PricingPage() {
   const [pricingSections, setPricingSections] = useState<PricingSectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [addonOffers, setAddonOffers] = useState<AddonOffer[]>([]);
+  /** The pack waiting on the "add to your purchase?" question, with the add-ons offered. */
+  const [upsell, setUpsell] = useState<{ packId: string; offers: AddonOffer[] } | null>(null);
+  const [upsellPicked, setUpsellPicked] = useState<string[]>([]);
   const [checkoutSlow, setCheckoutSlow] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [promoCode, setPromoCode] = useState("");
@@ -251,6 +275,35 @@ function PricingPage() {
       );
       setProducts(rows);
       setLoading(false);
+
+      const { data: offerRows, error: offerErr } = await supabase
+        .from("products")
+        .select(
+          "id, name, description, price_zar, mat_included, shower_towel_included, offer_with_section_ids",
+        )
+        .eq("is_active", true)
+        .eq("is_staff_only", false)
+        .gt("price_zar", 0);
+      if (cancelled) return;
+      if (offerErr) {
+        console.warn("[pricing] add-on offers", offerErr.message);
+        return;
+      }
+      setAddonOffers(
+        ((offerRows ?? []) as Record<string, unknown>[])
+          .map((r) => ({
+            id: String(r.id),
+            name: String(r.name ?? ""),
+            description: r.description == null ? null : String(r.description),
+            price_zar: Number(r.price_zar ?? 0),
+            mat_included: r.mat_included as boolean | null,
+            shower_towel_included: r.shower_towel_included as boolean | null,
+            offer_with_section_ids: Array.isArray(r.offer_with_section_ids)
+              ? (r.offer_with_section_ids as unknown[]).map(String)
+              : [],
+          }))
+          .filter((a) => a.offer_with_section_ids.length > 0),
+      );
     }
 
     void fetchOnce();
@@ -301,7 +354,21 @@ function PricingPage() {
     setOpenSections((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
-  const buyNow = async (packId: string) => {
+  /** Add-ons to offer with this pack, skipping any the pack already includes. */
+  const offersFor = (product: ProductRow): AddonOffer[] => {
+    const sectionId = product.pricing_section_id;
+    if (!sectionId) return [];
+    return addonOffers.filter((a) => {
+      if (a.id === product.id || !a.offer_with_section_ids.includes(sectionId)) return false;
+      const matOnly = a.mat_included === true && a.shower_towel_included !== true;
+      const towelOnly = a.shower_towel_included === true && a.mat_included !== true;
+      if (matOnly && product.mat_included) return false;
+      if (towelOnly && product.shower_towel_included) return false;
+      return true;
+    });
+  };
+
+  const buyNow = async (packId: string, addonIds?: string[]) => {
     if (buyingId) return;
     const user = await getUser();
     if (!user) {
@@ -332,6 +399,15 @@ function PricingPage() {
       return;
     }
 
+    if (addonIds === undefined) {
+      const offers = offersFor(product);
+      if (offers.length > 0) {
+        setUpsellPicked([]);
+        setUpsell({ packId, offers });
+        return;
+      }
+    }
+
     const usePts =
       typeof flowPointsState === "number" &&
       flowPointsState > 0 &&
@@ -357,6 +433,7 @@ function PricingPage() {
       cancel_url: `${origin}/pricing`,
       promo_code: promoCode || undefined,
     };
+    if (addonIds && addonIds.length > 0) body.addon_ids = addonIds;
     if (redemption.flow_points_used > 0) {
       body.flow_points_used = redemption.flow_points_used;
       body.flow_points_discount_zar = redemption.flow_points_discount_zar;
@@ -780,6 +857,87 @@ function PricingPage() {
           </p>
         </main>
       </div>
+
+      <Dialog open={upsell !== null} onOpenChange={(o) => !o && setUpsell(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add to your purchase?</DialogTitle>
+            <DialogDescription>
+              Make every visit easier. Tick anything you&apos;d like to add.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-2">
+            {(upsell?.offers ?? []).map((a) => {
+              const id = `upsell-${a.id}`;
+              const picked = upsellPicked.includes(a.id);
+              return (
+                <li key={a.id}>
+                  <label
+                    htmlFor={id}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm transition-colors",
+                      picked ? "border-[#a3b693] bg-[#e8efe3]/60" : "border-border",
+                    )}
+                  >
+                    <Checkbox
+                      id={id}
+                      className="mt-0.5"
+                      checked={picked}
+                      onCheckedChange={(c) =>
+                        setUpsellPicked((prev) =>
+                          c === true ? [...new Set([...prev, a.id])] : prev.filter((x) => x !== a.id),
+                        )
+                      }
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-foreground">
+                        Would you like to add {a.name}?
+                      </span>
+                      {a.description ? (
+                        <span className="mt-0.5 block text-xs text-muted-foreground">
+                          {a.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums">
+                      {formatPriceZar(a.price_zar)}
+                      <span className="block text-right text-[10px] font-normal text-muted-foreground">
+                        per month
+                      </span>
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium"
+              onClick={() => {
+                const packId = upsell?.packId;
+                setUpsell(null);
+                if (packId) void buyNow(packId, []);
+              }}
+            >
+              No thanks
+            </button>
+            <button
+              type="button"
+              disabled={upsellPicked.length === 0}
+              className="rounded-lg bg-[#a3b693] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              onClick={() => {
+                const packId = upsell?.packId;
+                const picked = upsellPicked;
+                setUpsell(null);
+                if (packId) void buyNow(packId, picked);
+              }}
+            >
+              Add and continue
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

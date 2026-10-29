@@ -366,6 +366,28 @@ serve(async (req) => {
     raw?.open_access_upgrade === true && upgradePriceZar > 0 && packRow.access_scope !== "open_access";
   const upgradeCents = openAccessUpgrade ? Math.round(upgradePriceZar * 100) : 0;
 
+  // Monthly add-ons offered with this pack (Admin → Products → "Offer as an add-on").
+  const addonIdsRaw: string[] = Array.isArray(raw?.addon_ids)
+    ? (raw.addon_ids as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 5)
+    : [];
+  let addons: any[] = [];
+  if (addonIdsRaw.length > 0 && packRow.pricing_section_id) {
+    const { data: addonRows } = await supabase
+      .from("products")
+      .select("id, name, price_zar, is_active, is_staff_only, offer_with_section_ids")
+      .in("id", addonIdsRaw);
+    addons = ((addonRows ?? []) as any[]).filter(
+      (a) =>
+        a.id !== packRow.id &&
+        a.is_active !== false &&
+        a.is_staff_only !== true &&
+        Number(a.price_zar) > 0 &&
+        Array.isArray(a.offer_with_section_ids) &&
+        a.offer_with_section_ids.map(String).includes(String(packRow.pricing_section_id)),
+    );
+  }
+  const addonCents = addons.reduce((sum, a) => sum + Math.round(Number(a.price_zar) * 100), 0);
+
   // Outstanding late cancel / no-show fees are added to the purchase.
   const unpaidFees = await loadUnpaidFees(supabase, String(profile_id));
   const lateFeeCents = unpaidFees.cents;
@@ -479,7 +501,7 @@ serve(async (req) => {
   const packOnlyCents = Number.isFinite(afterPromoCents)
     ? Math.max(100, afterPromoCents - flowDiscountCents)
     : NaN;
-  const packPayableCents = Number.isFinite(packOnlyCents) ? packOnlyCents + upgradeCents : NaN;
+  const packPayableCents = Number.isFinite(packOnlyCents) ? packOnlyCents + upgradeCents + addonCents : NaN;
   const lateFeeApplied = hasLateCancelFee && lateFeeCents > 0;
   const amountCents = Number.isFinite(packPayableCents)
     ? packPayableCents + (lateFeeApplied ? lateFeeCents : 0)
@@ -523,6 +545,13 @@ serve(async (req) => {
       pricingDetails: { price: upgradeCents },
     });
   }
+  for (const a of addons) {
+    lineItems.push({
+      displayName: String(a.name),
+      quantity: 1,
+      pricingDetails: { price: Math.round(Number(a.price_zar) * 100) },
+    });
+  }
   if (lateFeeApplied) {
     lineItems.push({
       displayName: "Outstanding studio fees",
@@ -559,7 +588,9 @@ serve(async (req) => {
     lineItems,
     customer_reference: yocoCustomerReference(buyerName),
     customer_description: yocoCustomerDescription(packName),
-    description: `${packName}${openAccessUpgrade ? " + Open Access" : ""} — ${buyerName}${
+    description: `${packName}${openAccessUpgrade ? " + Open Access" : ""}${
+      addons.length > 0 ? ` + ${addons.map((a) => a.name).join(" + ")}` : ""
+    } — ${buyerName}${
       lateFeeApplied ? ` + R${Math.round(lateFeeCents / 100)} outstanding fees` : ""
     }`,
     successUrl: success_url,
@@ -574,6 +605,7 @@ serve(async (req) => {
       fee_ids: lateFeeApplied ? unpaidFees.ids.join(",") : "",
       open_access_upgrade: openAccessUpgrade,
       upgrade_amount_zar: openAccessUpgrade ? upgradePriceZar : 0,
+      addon_ids: addons.map((a) => a.id).join(","),
       member_price_applied: memberPriceApplied,
       amount_paid_zar: Number.isFinite(packPayableCents) ? Math.round(packPayableCents) / 100 : null,
       promo_code_applied: promoApplied?.code ?? null,
