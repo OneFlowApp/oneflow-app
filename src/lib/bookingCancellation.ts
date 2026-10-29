@@ -11,6 +11,14 @@ type CancelBookingParams = {
 type CancellationResult = {
   lateCancel: boolean;
   waived: boolean;
+  /** Late fee charged (Rand), 0 when none. */
+  feeZar: number;
+  /** Credit pack: credit held until the fee is paid in time. */
+  creditHeld: boolean;
+  /** Credit pack: cancelled too close to class, credit used. */
+  creditLost: boolean;
+  /** Membership: cannot book until the fee is paid. */
+  bookingBlocked: boolean;
   className: string;
   startsAt: string;
 };
@@ -106,12 +114,15 @@ export async function cancelBookingWithPolicy({
   });
   if (cancelError) throw new Error(cancelError.message);
 
-  const cancelResult = one(
-    cancelData as
-      | { late_cancel?: boolean | null; late_fee_applied?: boolean | null }
-      | { late_cancel?: boolean | null; late_fee_applied?: boolean | null }[]
-      | null,
-  );
+  type CancelRpcResult = {
+    late_cancel?: boolean | null;
+    late_fee_applied?: boolean | null;
+    fee_zar?: number | null;
+    credit_held?: boolean | null;
+    credit_lost?: boolean | null;
+    booking_blocked?: boolean | null;
+  };
+  const cancelResult = one(cancelData as CancelRpcResult | CancelRpcResult[] | null);
   const lateCancel = Boolean(cancelResult?.late_cancel);
 
   const profile = one(booking.profiles);
@@ -153,7 +164,32 @@ export async function cancelBookingWithPolicy({
   return {
     lateCancel,
     waived: lateCancel && waiveLateFee,
+    feeZar: Number(cancelResult?.fee_zar ?? 0) || 0,
+    creditHeld: Boolean(cancelResult?.credit_held),
+    creditLost: Boolean(cancelResult?.credit_lost),
+    bookingBlocked: Boolean(cancelResult?.booking_blocked),
     className: cls.name,
     startsAt: cls.starts_at,
   };
+}
+
+/** Plain-language outcome of a cancellation, for toasts. */
+export function cancellationOutcomeMessage(r: CancellationResult, who: "you" | "member" = "you"): string {
+  const fee = r.feeZar > 0 ? `R${Math.round(r.feeZar)}` : "";
+  if (r.creditHeld) {
+    return who === "you"
+      ? `Late cancellation: ${fee} fee. Pay it within 24 hours on your Me page to keep your credit.`
+      : `Booking removed. ${fee} late fee; the credit comes back if it is paid within 24 hours.`;
+  }
+  if (r.bookingBlocked) {
+    return who === "you"
+      ? `Late cancellation: ${fee} fee. You can book again once it is paid on your Me page.`
+      : `Booking removed. ${fee} late fee; bookings are blocked until it is paid.`;
+  }
+  if (r.creditLost) {
+    return who === "you"
+      ? "Cancelled less than an hour before class, so this credit has been used."
+      : "Booking removed. Inside the last hour, so the credit is used.";
+  }
+  return who === "you" ? "Booking cancelled. Credit returned." : "Booking removed and credit returned.";
 }

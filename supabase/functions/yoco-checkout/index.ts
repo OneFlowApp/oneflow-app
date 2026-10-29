@@ -84,6 +84,39 @@ async function lookupClassBillFields(
   };
 }
 
+/** A member holds an active, paid pack: not expired, not refunded, sessions left or unlimited, not free/staff. */
+async function isActiveMember(supabase: any, profileId: string) {
+  const { data, error } = await supabase
+    .from("user_credits")
+    .select("credits_remaining, is_unlimited, expires_at, refunded_at, entry_type, products(price_zar, is_staff_only, name)")
+    .eq("profile_id", profileId);
+  if (error || !data) return false;
+  const now = Date.now();
+  return (data as any[]).some((c: any) => {
+    const prod = one(c.products as any);
+    if (!prod) return false;
+    if (c.refunded_at) return false;
+    if (c.entry_type === "free") return false;
+    if (c.expires_at && new Date(c.expires_at).getTime() <= now) return false;
+    if (!c.is_unlimited && !(Number(c.credits_remaining) > 0)) return false;
+    if (!(Number(prod.price_zar) > 0) || prod.is_staff_only) return false;
+    if (String(prod.name ?? "").toLowerCase().includes("staff")) return false;
+    return true;
+  });
+}
+
+/** Unpaid late cancel and no-show fees for a member (from member_fees). */
+async function loadUnpaidFees(supabase: any, profileId: string) {
+  const { data } = await supabase
+    .from("member_fees")
+    .select("id, amount_zar, kind")
+    .eq("profile_id", profileId)
+    .eq("status", "unpaid");
+  const rows: any[] = data ?? [];
+  const cents = rows.reduce((sum: number, r: any) => sum + Math.round(Number(r.amount_zar || 0) * 100), 0);
+  return { ids: rows.map((r: any) => String(r.id)), cents };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -101,7 +134,6 @@ serve(async (req) => {
     const inviter_profile_id = String(raw.inviter_profile_id ?? "");
     const success_url = String(raw.success_url ?? "");
     const cancel_url = String(raw.cancel_url ?? "");
-    const amount_zar = Number(raw.amount_zar);
 
     if (!class_invite_id || !inviter_profile_id || !success_url || !cancel_url) {
       return new Response(
@@ -144,8 +176,8 @@ serve(async (req) => {
       });
     }
 
-    const defaultZar = Number(Deno.env.get("CLASS_INVITE_AMOUNT_ZAR") ?? "180");
-    const zar = Number.isFinite(amount_zar) && amount_zar > 0 ? amount_zar : defaultZar;
+    // The invite price is set on the server only; any amount sent by the app is ignored.
+    const zar = Number(Deno.env.get("CLASS_INVITE_AMOUNT_ZAR") ?? "180");
     const amountCents = Math.round(zar * 100);
 
     const { data: inviterProfile } = await supabase
@@ -209,6 +241,59 @@ serve(async (req) => {
     });
   }
 
+  // Pay outstanding late cancel / no-show fees on their own.
+  if (raw?.type === "fees") {
+    const feeProfileId = String(raw.profile_id ?? "");
+    const feeAuth = req.headers.get("Authorization") ?? "";
+    let feeUserId: string | null = null;
+    if (feeAuth.startsWith("Bearer ") && SUPABASE_ANON_KEY) {
+      const c = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: feeAuth } } });
+      const { data: u } = await c.auth.getUser();
+      feeUserId = u.user?.id ?? null;
+    }
+    if (!feeUserId || feeUserId !== feeProfileId) {
+      return new Response(JSON.stringify({ error: "Please sign in to pay your fees." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const fees = await loadUnpaidFees(supabase, feeProfileId);
+    if (fees.cents <= 0) {
+      return new Response(JSON.stringify({ error: "There are no fees to pay." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: feeProfile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", feeProfileId)
+      .maybeSingle();
+    const feeBuyer = [feeProfile?.first_name, feeProfile?.last_name].filter(Boolean).join(" ") || "Member";
+    const feePayload = {
+      amount: fees.cents,
+      currency: "ZAR",
+      lineItems: [{ displayName: "Outstanding studio fees", quantity: 1, pricingDetails: { price: fees.cents } }],
+      customer_reference: yocoCustomerReference(feeBuyer),
+      customer_description: yocoCustomerDescription("Outstanding studio fees"),
+      description: `Outstanding studio fees — ${feeBuyer}`,
+      successUrl: String(raw.success_url ?? ""),
+      cancelUrl: String(raw.cancel_url ?? ""),
+      failureUrl: String(raw.cancel_url ?? ""),
+      metadata: { type: "fees", profile_id: feeProfileId, fee_ids: fees.ids.join(","), buyer_name: feeBuyer },
+    };
+    const feeRes = await fetch("https://payments.yoco.com/api/checkouts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${YOCO_SECRET}` },
+      body: JSON.stringify(feePayload),
+    });
+    const feeCheckout = await feeRes.json();
+    console.log("yoco fees status:", feeRes.status);
+    return new Response(JSON.stringify(feeCheckout), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const { pack_id, profile_id, success_url, cancel_url } = raw;
   console.log("pack_id:", pack_id, "profile_id:", profile_id);
 
@@ -253,7 +338,37 @@ serve(async (req) => {
     });
   }
 
-  const priceZar = Number((pack as { price_zar?: number }).price_zar);
+  const packRow: any = pack;
+  if (packRow.is_active === false || packRow.is_staff_only === true) {
+    return new Response(JSON.stringify({ error: "This pack is not available to buy." }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (!authedUserId || authedUserId !== String(profile_id)) {
+    return new Response(JSON.stringify({ error: "Please sign in to buy a pack." }), {
+      status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const listPriceZar = Number(packRow.price_zar);
+  const memberPriceZar = Number(packRow.member_price_zar ?? 0);
+  let memberPriceApplied = false;
+  let priceZar = listPriceZar;
+  if (memberPriceZar > 0 && memberPriceZar < listPriceZar && (await isActiveMember(supabase, String(profile_id)))) {
+    priceZar = memberPriceZar;
+    memberPriceApplied = true;
+  }
+
+  const upgradePriceZar = Number(packRow.upgrade_price_zar ?? 0);
+  const openAccessUpgrade =
+    raw?.open_access_upgrade === true && upgradePriceZar > 0 && packRow.access_scope !== "open_access";
+  const upgradeCents = openAccessUpgrade ? Math.round(upgradePriceZar * 100) : 0;
+
+  // Outstanding late cancel / no-show fees are added to the purchase.
+  const unpaidFees = await loadUnpaidFees(supabase, String(profile_id));
+  const lateFeeCents = unpaidFees.cents;
   const { data: profile } = await supabase
     .from("profiles")
     .select("first_name, last_name, late_cancel_fee_pending, flow_points")
@@ -261,9 +376,7 @@ serve(async (req) => {
     .maybeSingle();
   const buyerName =
     [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Member";
-  const hasLateCancelFee = Boolean(
-    (profile as { late_cancel_fee_pending?: boolean } | null)?.late_cancel_fee_pending,
-  );
+  const hasLateCancelFee = unpaidFees.ids.length > 0;
   const baseAmountCents = Number.isFinite(priceZar) ? Math.round(priceZar * 100) : NaN;
 
   let promoDiscountCents = 0;
@@ -363,11 +476,13 @@ serve(async (req) => {
     }
   }
 
-  const packPayableCents = Number.isFinite(afterPromoCents)
+  const packOnlyCents = Number.isFinite(afterPromoCents)
     ? Math.max(100, afterPromoCents - flowDiscountCents)
     : NaN;
+  const packPayableCents = Number.isFinite(packOnlyCents) ? packOnlyCents + upgradeCents : NaN;
+  const lateFeeApplied = hasLateCancelFee && lateFeeCents > 0;
   const amountCents = Number.isFinite(packPayableCents)
-    ? packPayableCents + (hasLateCancelFee ? 10000 : 0)
+    ? packPayableCents + (lateFeeApplied ? lateFeeCents : 0)
     : NaN;
   if (!Number.isFinite(amountCents) || amountCents <= 0) {
     return new Response(JSON.stringify({ error: "Invalid price_zar on product" }), {
@@ -387,8 +502,8 @@ serve(async (req) => {
   }
 
   const packName = String((pack as { name?: string }).name ?? "One Flow purchase");
-  const packLinePriceCents = Number.isFinite(packPayableCents)
-    ? packPayableCents
+  const packLinePriceCents = Number.isFinite(packOnlyCents)
+    ? packOnlyCents
     : Math.round(priceZar * 100);
   const lineItems: Array<{
     displayName: string;
@@ -401,11 +516,18 @@ serve(async (req) => {
       pricingDetails: { price: packLinePriceCents },
     },
   ];
-  if (hasLateCancelFee) {
+  if (openAccessUpgrade) {
     lineItems.push({
-      displayName: "Late cancellation fee",
+      displayName: "Open Access upgrade (Longkloof + Green Point)",
       quantity: 1,
-      pricingDetails: { price: 10000 },
+      pricingDetails: { price: upgradeCents },
+    });
+  }
+  if (lateFeeApplied) {
+    lineItems.push({
+      displayName: "Outstanding studio fees",
+      quantity: 1,
+      pricingDetails: { price: lateFeeCents },
     });
   }
 
@@ -437,9 +559,9 @@ serve(async (req) => {
     lineItems,
     customer_reference: yocoCustomerReference(buyerName),
     customer_description: yocoCustomerDescription(packName),
-    description: hasLateCancelFee
-      ? `${packName} — ${buyerName} + R100 late cancellation fee`
-      : `${packName} — ${buyerName}`,
+    description: `${packName}${openAccessUpgrade ? " + Open Access" : ""} — ${buyerName}${
+      lateFeeApplied ? ` + R${Math.round(lateFeeCents / 100)} outstanding fees` : ""
+    }`,
     successUrl: success_url,
     cancelUrl: cancel_url,
     failureUrl: cancel_url,
@@ -447,8 +569,13 @@ serve(async (req) => {
       pack_id,
       profile_id,
       buyer_name: buyerName,
-      late_cancel_fee_applied: hasLateCancelFee,
-      description: hasLateCancelFee ? "+ R100 late cancellation fee" : "",
+      late_cancel_fee_applied: lateFeeApplied,
+      description: lateFeeApplied ? `+ R${Math.round(lateFeeCents / 100)} outstanding fees` : "",
+      fee_ids: lateFeeApplied ? unpaidFees.ids.join(",") : "",
+      open_access_upgrade: openAccessUpgrade,
+      upgrade_amount_zar: openAccessUpgrade ? upgradePriceZar : 0,
+      member_price_applied: memberPriceApplied,
+      amount_paid_zar: Number.isFinite(packPayableCents) ? Math.round(packPayableCents) / 100 : null,
       promo_code_applied: promoApplied?.code ?? null,
       promo_discount_zar: promoDiscountCents > 0 ? Math.round(promoDiscountCents / 100) : 0,
       flow_points_used: flowPointsUsed > 0 ? flowPointsUsed : 0,

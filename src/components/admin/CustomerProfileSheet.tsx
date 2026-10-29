@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
   Loader2,
@@ -1117,6 +1118,8 @@ export function CustomerProfileSheet({
                   </ul>
                 )}
               </section>
+
+              <MemberFeesSection profileId={profile.id} canWaive={canManage} />
 
               <section className="border-t border-border pt-6">
                 <h4 className="mb-3 font-display text-lg font-semibold">Credit transaction history</h4>
