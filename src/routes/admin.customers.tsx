@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { DuplicateMembersSection } from "@/components/admin/DuplicateMembersSection";
 import { DeletedMembersSection } from "@/components/admin/DeletedMembersSection";
 import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,6 +27,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -337,6 +339,8 @@ function CustomersPage() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [deletedKey, setDeletedKey] = useState(0);
+  // Adding a member who may already exist: show a warning first.
+  const [dupMatch, setDupMatch] = useState<{ member: MemberRow; why: string } | null>(null);
   const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
   const [sendEmailOpen, setSendEmailOpen] = useState(false);
   const [sendEmailTarget, setSendEmailTarget] = useState<SendMemberEmailTarget | null>(null);
@@ -705,7 +709,21 @@ function CustomersPage() {
     );
   };
 
-  const submitAddMember = async () => {
+  /** An existing member with the same email, phone (last 9 digits) or name, if any. */
+  const findExistingMember = (): { member: MemberRow; why: string } | null => {
+    const em = email.trim().toLowerCase();
+    const ph = phone.replace(/\D/g, "").slice(-9);
+    const nm = `${firstName.trim()} ${lastName.trim()}`.trim().toLowerCase();
+    for (const m of members) {
+      if (em && m.email.trim().toLowerCase() === em) return { member: m, why: "the same email" };
+      const mp = (m.phone ?? "").replace(/\D/g, "").slice(-9);
+      if (ph.length === 9 && mp === ph) return { member: m, why: "the same phone number" };
+      if (nm && m.name.trim().toLowerCase() === nm) return { member: m, why: "the same name" };
+    }
+    return null;
+  };
+
+  const submitAddMember = async (skipDuplicateCheck = false) => {
     const err: typeof addFieldErrors = {};
     if (!firstName.trim()) err.firstName = "First name is required.";
     if (!lastName.trim()) err.lastName = "Last name is required.";
@@ -713,6 +731,14 @@ function CustomersPage() {
     else if (!isValidEmail(email)) err.email = "Enter a valid email address.";
     setAddFieldErrors(err);
     if (Object.keys(err).length > 0) return;
+
+    if (!skipDuplicateCheck) {
+      const existing = findExistingMember();
+      if (existing) {
+        setDupMatch(existing);
+        return;
+      }
+    }
 
     setSaving(true);
     const { data, error } = await supabase.functions.invoke<{
@@ -820,8 +846,61 @@ function CustomersPage() {
       ) : null}
 
       {canManageCustomers ? (
+        <DuplicateMembersSection
+          refreshKey={deletedKey}
+          onMerged={() => {
+            void load();
+            setDeletedKey((k) => k + 1);
+          }}
+        />
+      ) : null}
+
+      {canManageCustomers ? (
         <DeletedMembersSection refreshKey={deletedKey} onOpenMember={openProfileSheet} />
       ) : null}
+
+      <Dialog open={dupMatch !== null} onOpenChange={(o) => !o && setDupMatch(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>This person may already have an account</DialogTitle>
+            <DialogDescription>
+              {dupMatch
+                ? `${dupMatch.member.name} (${dupMatch.member.email || "no email"}) has ${dupMatch.why}.`
+                : ""}{" "}
+              Open their profile instead, or add a new account anyway.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setDupMatch(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const id = dupMatch?.member.id;
+                setDupMatch(null);
+                if (id) {
+                  setAddOpen(false);
+                  openProfileSheet(id);
+                }
+              }}
+            >
+              Open their profile
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={() => {
+                setDupMatch(null);
+                void submitAddMember(true);
+              }}
+            >
+              Add anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CustomerProfileSheet
         customerId={sheetCustomerId}
@@ -938,7 +1017,7 @@ function CustomersPage() {
               type="button"
               disabled={saving}
               className="w-full bg-[#a3b693] text-white hover:bg-[#8fa67d] sm:w-auto"
-              onClick={() => void submitAddMember()}
+              onClick={() => void submitAddMember(false)}
             >
               {saving ? (
                 <>
