@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { MembershipPerksPanel } from "@/components/admin/MembershipPerksPanel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -351,6 +352,8 @@ function SettingsPage() {
         <PricingSectionsPanel />
 
         <AccessGroupsPanel />
+
+        <MembershipPerksPanel />
 
         <section className="rounded-2xl border border-destructive/40 bg-destructive/5 p-5">
           <div className="flex items-center gap-2">
