@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
-import { BadgeCheck, X } from "lucide-react";
+import { BadgeCheck, Copy, ExternalLink, X } from "lucide-react";
+import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
 
 type Membership = { is_member: boolean; valid_until: string | null; pack_names: string[] | null };
-type Perk = { id: string; title: string; description: string | null };
+type Perk = {
+  id: string;
+  title: string;
+  description: string | null;
+  link_url: string | null;
+  discount_code: string | null;
+};
 type Person = { first_name: string | null; last_name: string | null; avatar_url: string | null };
 
 function formatDate(iso: string | null): string {
@@ -33,7 +40,7 @@ export function MembershipCard() {
         supabase.rpc("my_membership"),
         supabase
           .from("membership_perks")
-          .select("id, title, description")
+          .select("id, title, description, link_url, discount_code")
           .eq("is_active", true)
           .order("sort_order", { ascending: true }),
         supabase.from("profiles").select("first_name, last_name, avatar_url").eq("id", user.id).maybeSingle(),
@@ -148,8 +155,37 @@ export function MembershipCard() {
               <ul className="space-y-2">
                 {perks.map((p) => (
                   <li key={p.id} className="rounded-xl bg-white/10 px-4 py-3">
-                    <p className="font-semibold">{p.title}</p>
+                    {p.link_url ? (
+                      <a
+                        href={p.link_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-2 font-semibold underline-offset-2 hover:underline"
+                      >
+                        {p.title}
+                        <ExternalLink className="h-4 w-4 shrink-0 opacity-80" aria-hidden />
+                      </a>
+                    ) : (
+                      <p className="font-semibold">{p.title}</p>
+                    )}
                     {p.description ? <p className="text-sm text-white/80">{p.description}</p> : null}
+                    {p.discount_code ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard
+                            ?.writeText(p.discount_code ?? "")
+                            .then(() => toast.success("Discount code copied"))
+                            .catch(() => undefined);
+                        }}
+                        className="mt-2 inline-flex items-center gap-2 rounded-lg border border-dashed border-white/50 px-3 py-1.5 text-sm"
+                        aria-label={`Copy discount code ${p.discount_code}`}
+                      >
+                        <span className="text-white/75">Online code</span>
+                        <span className="font-mono font-semibold tracking-wider">{p.discount_code}</span>
+                        <Copy className="h-3.5 w-3.5 opacity-80" aria-hidden />
+                      </button>
+                    ) : null}
                   </li>
                 ))}
               </ul>
