@@ -63,7 +63,7 @@ type ProductRow = {
   member_price_zar: number | null;
   mat_included: boolean;
   shower_towel_included: boolean;
-  offer_with_section_ids: string[];
+  offer_with_product_ids: string[];
 };
 
 type AccessGroup = {
@@ -332,8 +332,8 @@ function ProductsPage() {
   const [memberPriceZar, setMemberPriceZar] = useState("");
   const [matIncluded, setMatIncluded] = useState(false);
   const [showerTowelIncluded, setShowerTowelIncluded] = useState(false);
-  /** Sections whose purchases offer this product as a monthly add-on. Empty = not an add-on. */
-  const [offerSectionIds, setOfferSectionIds] = useState<string[]>([]);
+  /** Products whose purchase offers this product as a monthly add-on. Empty = not an add-on. */
+  const [offerProductIds, setOfferProductIds] = useState<string[]>([]);
   const [allowanceItems, setAllowanceItems] = useState<AllowanceItem[]>(() => [newAllowanceItem()]);
   const [allowancesLoading, setAllowancesLoading] = useState(false);
 
@@ -345,7 +345,7 @@ function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_section_ids",
+        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids",
       )
       .order("category", { ascending: true })
       .order("name", { ascending: true });
@@ -377,8 +377,8 @@ function ProductsPage() {
       member_price_zar: nullableNumber(raw.member_price_zar),
       mat_included: Boolean(raw.mat_included),
       shower_towel_included: Boolean(raw.shower_towel_included),
-      offer_with_section_ids: Array.isArray(raw.offer_with_section_ids)
-        ? (raw.offer_with_section_ids as unknown[]).map(String)
+      offer_with_product_ids: Array.isArray(raw.offer_with_product_ids)
+        ? (raw.offer_with_product_ids as unknown[]).map(String)
         : [],
     }));
 
@@ -430,6 +430,31 @@ function ProductsPage() {
     void load();
     void loadLookups();
   }, [load, loadLookups]);
+
+  /** Products this add-on can be offered with, grouped by pricing section. */
+  const offerCandidateGroups = useMemo(() => {
+    const candidates = rows.filter(
+      (r) =>
+        r.id !== editingId &&
+        !r.is_staff_only &&
+        r.offer_with_product_ids.length === 0 &&
+        r.price_zar > 0,
+    );
+    const groups = pricingSections
+      .map((sec) => ({
+        id: sec.id,
+        name: sec.name,
+        items: candidates
+          .filter((r) => r.pricing_section_id === sec.id)
+          .sort((a, b) => a.name.localeCompare(b.name)),
+      }))
+      .filter((g) => g.items.length > 0);
+    const other = candidates
+      .filter((r) => !r.pricing_section_id || !pricingSections.some((sec) => sec.id === r.pricing_section_id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    if (other.length > 0) groups.push({ id: "__other", name: "Other products", items: other });
+    return groups;
+  }, [rows, pricingSections, editingId]);
 
   const pricingSectionNameById = useMemo(
     () => new Map(pricingSections.map((s) => [s.id, s.name])),
@@ -504,7 +529,7 @@ function ProductsPage() {
     setMemberPriceZar(d.memberPriceZar);
     setMatIncluded(d.matIncluded);
     setShowerTowelIncluded(d.showerTowelIncluded);
-    setOfferSectionIds([]);
+    setOfferProductIds([]);
     setAllowanceItems([newAllowanceItem()]);
   }, []);
 
@@ -521,7 +546,7 @@ function ProductsPage() {
     setMemberPriceZar(p.member_price_zar == null ? "" : String(p.member_price_zar));
     setMatIncluded(p.mat_included);
     setShowerTowelIncluded(p.shower_towel_included);
-    setOfferSectionIds(p.offer_with_section_ids ?? []);
+    setOfferProductIds(p.offer_with_product_ids ?? []);
   }, []);
 
   /** Loads the pack's `product_allowances` rows into the "What's included" builder. */
@@ -681,7 +706,7 @@ function ProductsPage() {
       return;
     }
 
-    const isOfferAddon = offerSectionIds.length > 0;
+    const isOfferAddon = offerProductIds.length > 0;
     if (allowancesLoading && !isOfferAddon) {
       toast.error("Included items are still loading");
       return;
@@ -737,7 +762,7 @@ function ProductsPage() {
       member_price_zar: memberPrice,
       mat_included: matIncluded,
       shower_towel_included: showerTowelIncluded,
-      offer_with_section_ids: offerSectionIds,
+      offer_with_product_ids: offerProductIds,
     };
 
     setSaving(true);
@@ -1224,40 +1249,75 @@ function ProductsPage() {
             <div className="rounded-lg border border-border bg-muted/15 px-3 py-2.5">
               <Label className="text-foreground">Offer as a monthly add-on</Label>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                When someone buys a product from a ticked section, they&apos;re asked
-                &ldquo;Would you like to add {name.trim() || "this"}?&rdquo; before paying.
-                Add-ons give mat or towel access only, no class credits.
+                When someone buys a ticked product, they&apos;re asked &ldquo;Would you like to
+                add {name.trim() || "this"}?&rdquo; before paying. Add-ons give mat or towel
+                access only, no class credits.
               </p>
-              {pricingSections.length === 0 ? (
-                <p className="mt-2 text-xs text-muted-foreground">No pricing sections yet.</p>
+              {offerCandidateGroups.length === 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">No products to offer it with yet.</p>
               ) : (
-                <ul className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {pricingSections.map((sec) => {
-                    const id = `offer-section-${sec.id}`;
+                <div className="mt-2 space-y-3">
+                  {offerCandidateGroups.map((g) => {
+                    const allTicked = g.items.every((x) => offerProductIds.includes(x.id));
                     return (
-                      <li key={sec.id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={id}
-                          checked={offerSectionIds.includes(sec.id)}
-                          onCheckedChange={(c) =>
-                            setOfferSectionIds((prev) =>
-                              c === true
-                                ? [...new Set([...prev, sec.id])]
-                                : prev.filter((x) => x !== sec.id),
-                            )
-                          }
-                        />
-                        <label htmlFor={id} className="text-sm leading-none">
-                          {sec.name}
-                        </label>
-                      </li>
+                      <div key={g.id}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {g.name}
+                          </p>
+                          <button
+                            type="button"
+                            className="text-xs font-medium text-[#5f7a52] underline-offset-2 hover:underline"
+                            onClick={() =>
+                              setOfferProductIds((prev) =>
+                                allTicked
+                                  ? prev.filter((x) => !g.items.some((it) => it.id === x))
+                                  : [...new Set([...prev, ...g.items.map((it) => it.id)])],
+                              )
+                            }
+                          >
+                            {allTicked ? "Untick all" : "Tick all"}
+                          </button>
+                        </div>
+                        <ul className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {g.items.map((prod) => {
+                            const id = `offer-product-${prod.id}`;
+                            return (
+                              <li key={prod.id} className="flex items-center gap-2">
+                                <Checkbox
+                                  id={id}
+                                  checked={offerProductIds.includes(prod.id)}
+                                  onCheckedChange={(c) =>
+                                    setOfferProductIds((prev) =>
+                                      c === true
+                                        ? [...new Set([...prev, prod.id])]
+                                        : prev.filter((x) => x !== prod.id),
+                                    )
+                                  }
+                                />
+                                <label htmlFor={id} className="text-sm leading-none">
+                                  {prod.name}
+                                  {prod.mat_included || prod.shower_towel_included ? (
+                                    <span className="ml-1 text-xs text-muted-foreground">
+                                      ({[prod.mat_included ? "mat & towel" : null, prod.shower_towel_included ? "shower towel" : null]
+                                        .filter(Boolean)
+                                        .join(", ")}{" "}
+                                      included)
+                                    </span>
+                                  ) : null}
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
                     );
                   })}
-                </ul>
+                </div>
               )}
             </div>
 
-            <div className={cn(offerSectionIds.length > 0 && "hidden")}>
+            <div className={cn(offerProductIds.length > 0 && "hidden")}>
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <Label>What&apos;s included</Label>

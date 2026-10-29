@@ -109,7 +109,7 @@ function buildAddonRows(p: any, profileId: string, paymentId: string, now: Date)
 }
 
 function isOfferedAddon(p: any): boolean {
-  return Array.isArray(p.offer_with_section_ids) && p.offer_with_section_ids.length > 0;
+  return Array.isArray(p.offer_with_product_ids) && p.offer_with_product_ids.length > 0;
 }
 
 function escapeHtml(v: unknown): string {
@@ -309,7 +309,7 @@ serve(async (req) => {
 
   const { data: pack, error: packErr } = await supabase
     .from("products")
-    .select("id, name, category, allowed_class_types, credit_count, validity_days, access_scope, mat_included, shower_towel_included, offer_with_section_ids, product_allowances(label, class_types, credits, sort_order)")
+    .select("id, name, category, allowed_class_types, credit_count, validity_days, access_scope, mat_included, shower_towel_included, offer_with_product_ids, product_allowances(label, class_types, credits, sort_order)")
     .eq("id", packId)
     .maybeSingle();
   if (packErr) {
