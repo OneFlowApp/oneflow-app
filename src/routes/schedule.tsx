@@ -45,6 +45,7 @@ import { useClassCatalog } from "@/contexts/classCatalog";
 import { displayClassType } from "@/types/studio";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { pickFocusClassId } from "@/lib/liveClassList";
+import { friendsGoingLabel, useFriendsGoing, type FriendGoing } from "@/lib/friendsGoing";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -362,6 +363,8 @@ export default function SchedulePage() {
   const longDayLabel = formatLongDayFromDateKey(selectedDateKey, studioTimeZone);
 
   const uid = user?.id;
+  const classIdsForFriends = useMemo(() => classes.map((c) => c.id), [classes]);
+  const friendsGoing = useFriendsGoing(classIdsForFriends, uid);
   const todayKey = todayDateKey(studioTimeZone);
   const isCurrentWeek = weekSundayKey <= weekSundayDateKey(todayKey, studioTimeZone);
   const selectedDayIsPast = isPastScheduleDay(selectedDateKey, studioTimeZone);
@@ -542,6 +545,7 @@ export default function SchedulePage() {
                         studioTimeZone={studioTimeZone}
                         alreadyBooked={bookedClassIds.has(c.id)}
                         onWaitlist={waitlistedClassIds.has(c.id)}
+                        friendsGoing={friendsGoing.get(c.id) ?? []}
                         overlapBooking={overlapBooking}
                         isPast={classIsPast}
                         onReserve={() => {
@@ -599,6 +603,7 @@ function ScheduleRow({
   studioTimeZone,
   alreadyBooked,
   onWaitlist,
+  friendsGoing,
   overlapBooking,
   isPast,
   onReserve,
@@ -608,6 +613,7 @@ function ScheduleRow({
   studioTimeZone: string;
   alreadyBooked: boolean;
   onWaitlist: boolean;
+  friendsGoing: FriendGoing[];
   overlapBooking: BookedClassInterval | null;
   isPast?: boolean;
   onReserve: () => void;
@@ -694,6 +700,34 @@ function ScheduleRow({
         </span>
         <span className="tabular-nums">{durationMin} mins</span>
       </p>
+
+      {friendsGoing.length > 0 ? (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="flex -space-x-2">
+            {friendsGoing.slice(0, 3).map((f) =>
+              f.avatar_url?.trim() ? (
+                <img
+                  key={f.friend_id}
+                  src={f.avatar_url}
+                  alt=""
+                  className="h-5 w-5 rounded-full border-2 border-card object-cover"
+                />
+              ) : (
+                <span
+                  key={f.friend_id}
+                  className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-[#a3b693] text-[9px] font-bold text-white"
+                  aria-hidden
+                >
+                  {(f.first_name?.trim() || "F").charAt(0).toUpperCase()}
+                </span>
+              ),
+            )}
+          </div>
+          <p className="text-[11px] font-medium" style={{ color: SAGE }}>
+            {friendsGoingLabel(friendsGoing)}
+          </p>
+        </div>
+      ) : null}
 
       {desc ? (
         <div className="mt-2 min-w-0">
