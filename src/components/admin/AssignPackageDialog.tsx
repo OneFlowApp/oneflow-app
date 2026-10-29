@@ -278,6 +278,10 @@ export function AssignPackageDialog({
   const [customValidityDays, setCustomValidityDays] = useState("");
   const [customClassTypes, setCustomClassTypes] = useState<string[]>([]);
   const [customNote, setCustomNote] = useState("");
+  // Custom package contents use the same access groups as Admin → Products.
+  const [accessGroups, setAccessGroups] = useState<{ id: string; name: string; class_types: string[] }[]>([]);
+  const [customGroupIds, setCustomGroupIds] = useState<string[]>([]);
+  const [saveAsProduct, setSaveAsProduct] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -318,8 +322,51 @@ export function AssignPackageDialog({
     setCustomValidityDays("");
     setCustomClassTypes([...defaultAllowedClassTypesForCreditCategory("yoga")]);
     setCustomNote("");
+    setCustomGroupIds([]);
+    setSaveAsProduct(false);
     setConfirmOpen(false);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("access_groups")
+        .select("id, name, class_types")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error("[AssignPackageDialog] access groups", error);
+        return;
+      }
+      setAccessGroups(
+        (data ?? []).map((g: Record<string, unknown>) => ({
+          id: String(g.id),
+          name: String(g.name ?? ""),
+          class_types: Array.isArray(g.class_types) ? (g.class_types as string[]).map(String) : [],
+        })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  /** Class types and category for the ticked access groups. */
+  const customAccess = useMemo(() => {
+    const ticked = accessGroups.filter((g) => customGroupIds.includes(g.id));
+    const types = [...new Set(ticked.flatMap((g) => g.class_types))];
+    const wellzoneOnly =
+      ticked.length > 0 &&
+      ticked.every((g) => ["wellzone", "sauna journey"].includes(g.name.trim().toLowerCase()));
+    return {
+      types,
+      category: (wellzoneOnly ? "wellzone" : "yoga") as CreditCategoryOrdered,
+      label: ticked.map((g) => g.name).join(" + "),
+    };
+  }, [accessGroups, customGroupIds]);
 
   useEffect(() => {
     const wasOpen = prevOpenRef.current;
@@ -705,9 +752,63 @@ export function AssignPackageDialog({
 
     const isUnlimited = customUnlimited;
     const total = isUnlimited ? UNLIMITED_MANUAL_TOTAL : Math.trunc(Number(customCredits));
+    if (customGroupIds.length === 0) {
+      toast.error("Tick at least one access group.");
+      return;
+    }
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
+
+    // Optionally keep this package as a product for future use (switched off, so it is not on Pricing).
+    let savedProductId: string | null = null;
+    if (saveAsProduct) {
+      const startMs = assignStartDate ? new Date(assignStartDate).getTime() : Date.now();
+      const endMs = assignEndDate ? new Date(assignEndDate).getTime() : NaN;
+      const typedDays = Math.trunc(Number(customValidityDays));
+      const validityDays =
+        Number.isFinite(typedDays) && typedDays > 0
+          ? typedDays
+          : Number.isFinite(endMs) && endMs > startMs
+            ? Math.max(1, Math.round((endMs - startMs) / 86_400_000))
+            : 30;
+      const { data: prod, error: prodErr } = await supabase
+        .from("products")
+        .insert({
+          name,
+          description: customNote.trim() || null,
+          category: customAccess.category,
+          price_zar: 0,
+          credit_count: isUnlimited ? 999 : total,
+          validity_days: validityDays,
+          allowed_class_types: customAccess.types,
+          is_active: false,
+          is_staff_only: false,
+          is_addon: false,
+          sort_order: 0,
+        })
+        .select("id")
+        .single();
+      if (prodErr || !prod) {
+        toast.error(`Could not save the package: ${supabaseErrorMessage(prodErr, "please try again")}`);
+        setSubmitting(false);
+        return;
+      }
+      savedProductId = String((prod as { id: unknown }).id);
+      const { error: allowErr } = await supabase.from("product_allowances").insert({
+        product_id: savedProductId,
+        label: customAccess.label || name,
+        group_ids: customGroupIds,
+        credits: isUnlimited ? 999 : total,
+        sort_order: 0,
+      });
+      if (allowErr) {
+        await supabase.from("products").delete().eq("id", savedProductId);
+        toast.error(`Could not save the package: ${supabaseErrorMessage(allowErr, "please try again")}`);
+        setSubmitting(false);
+        return;
+      }
+    }
     let insertedForSummary: AssignedCreditRow[] = [];
 
     const profileIds = [...new Set(assignees.map((a) => a.profileId.trim()))].filter(
@@ -761,10 +862,10 @@ export function AssignPackageDialog({
         .from("user_credits")
         .insert({
           profile_id: t.profileId,
-          product_id: null,
+          product_id: savedProductId,
           product_name: name,
-          category: customCategory,
-          allowed_class_types: customClassTypes,
+          category: customAccess.category,
+          allowed_class_types: customAccess.types,
           credits_total: total,
           credits_remaining: total,
           is_unlimited: isUnlimited,
@@ -812,9 +913,10 @@ export function AssignPackageDialog({
       onAssigned?.();
     } else {
       toast.success(
-        assignees.length === 1
+        (assignees.length === 1
           ? `${name} assigned to ${assignees[0]!.displayName}`
-          : `${name} assigned to ${assignees.length} members`,
+          : `${name} assigned to ${assignees.length} members`) +
+          (savedProductId ? ". Saved in Products (switched off)." : ""),
       );
       if (assignees.length === 1 && insertedForSummary.length > 0) {
         setAssignResultRows(insertedForSummary);
@@ -895,6 +997,10 @@ export function AssignPackageDialog({
           return;
         }
       }
+      if (customGroupIds.length === 0) {
+        toast.error("Tick at least one access group.");
+        return;
+      }
       if (!validateAssignPeriod()) return;
     }
     setConfirmTab(kind);
@@ -961,268 +1067,29 @@ export function AssignPackageDialog({
 
               <TabsContent value="existing" className="space-y-4 pt-2">
                 <div className="grid gap-2">
-                  <Label>Category</Label>
-                  {productsLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading products…</p>
-                  ) : (
-                    <Select
-                      value={existingCategory || undefined}
-                      onValueChange={(v) => {
-                        setExistingCategory(v);
-                        setSelectedProductId("");
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {existingCategoryOptions.map((slug) => (
-                          <SelectItem key={slug} value={slug}>
-                            {PRODUCT_CATEGORY_SLUG_LABEL[slug] ?? slug}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-                <div className="grid gap-2">
-                  <Label>Product</Label>
-                  {productsLoading ? (
-                    <p className="text-sm text-muted-foreground">Loading products…</p>
-                  ) : !existingCategory ? (
-                    <p className="text-sm text-muted-foreground">Choose a category first.</p>
-                  ) : productsInSelectedCategory.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No products in this category.</p>
-                  ) : (
-                    <Select
-                      value={selectedProductId || undefined}
-                      onValueChange={setSelectedProductId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {productsInSelectedCategory.map((p) => {
-                          const cc =
-                            p.credit_count == null
-                              ? "—"
-                              : p.credit_count >= UNLIMITED_PRODUCT_THRESHOLD
-                                ? "Unlimited"
-                                : String(p.credit_count);
-                          return (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name} · {cc} credits
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-                <PackagePeriodFields
-                  idPrefix="assign-existing"
-                  startDate={assignStartDate}
-                  endDate={assignEndDate}
-                  onStartChange={setAssignStartDate}
-                  onEndChange={setAssignEndDate}
-                />
-                {isBundleAssign && selectedProduct ? (
-                  <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
-                    <div>
-                      <p className="text-sm font-medium">Included with this package</p>
-                      <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                        {bundlePreviewRows.map((row) => (
-                          <li key={row.product_name}>
-                            <span className="font-medium text-foreground">{row.product_name}</span>
-                            {" · "}
-                            {bundleRowSummary(row)}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="border-t border-border pt-3">
-                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium">Extra components (optional)</p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 gap-1 text-xs"
-                          onClick={() =>
-                            setBundleExtras((prev) => [...prev, newBundleExtraDraft("cafe")])
-                          }
-                        >
-                          <Plus className="h-3 w-3 shrink-0" aria-hidden />
-                          Add component
-                        </Button>
-                      </div>
-                      {bundleExtras.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
-                          e.g. +10 café credits, extra Wellzone, mat or towel on top of the bundle.
-                        </p>
-                      ) : (
-                        <ul className="space-y-2">
-                          {bundleExtras.map((extra) => {
-                            const accessOnly = extra.kind === "mat" || extra.kind === "towel";
-                            return (
-                              <li
-                                key={extra.id}
-                                className="grid gap-2 rounded-md border border-border bg-background/80 p-2 sm:grid-cols-[1fr_88px_auto_auto]"
-                              >
-                                <Select
-                                  value={extra.kind}
-                                  onValueChange={(v) => {
-                                    const kind = v as BundleComponentKind;
-                                    setBundleExtras((prev) =>
-                                      prev.map((row) =>
-                                        row.id === extra.id
-                                          ? {
-                                              ...row,
-                                              kind,
-                                              unlimited:
-                                                kind === "mat" ||
-                                                kind === "towel" ||
-                                                row.unlimited,
-                                            }
-                                          : row,
-                                      ),
-                                    );
-                                  }}
-                                >
-                                  <SelectTrigger className="h-9">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {BUNDLE_COMPONENT_OPTIONS.map((opt) => (
-                                      <SelectItem key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                {!accessOnly && !extra.unlimited ? (
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    className="h-9"
-                                    value={extra.credits}
-                                    onChange={(e) =>
-                                      setBundleExtras((prev) =>
-                                        prev.map((row) =>
-                                          row.id === extra.id
-                                            ? { ...row, credits: e.target.value }
-                                            : row,
-                                        ),
-                                      )
-                                    }
-                                    aria-label="Credits"
-                                  />
-                                ) : (
-                                  <span className="flex h-9 items-center text-xs text-muted-foreground">
-                                    {accessOnly ? "Access" : "∞"}
-                                  </span>
-                                )}
-                                <div className="flex items-center gap-1.5">
-                                  <Switch
-                                    id={`extra-unlimited-${extra.id}`}
-                                    checked={extra.unlimited || accessOnly}
-                                    disabled={accessOnly}
-                                    onCheckedChange={(v) =>
-                                      setBundleExtras((prev) =>
-                                        prev.map((row) =>
-                                          row.id === extra.id ? { ...row, unlimited: v } : row,
-                                        ),
-                                      )
-                                    }
-                                  />
-                                  <Label
-                                    htmlFor={`extra-unlimited-${extra.id}`}
-                                    className="text-xs"
-                                  >
-                                    Unlimited
-                                  </Label>
-                                </div>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-9 w-9 shrink-0 text-destructive"
-                                  aria-label="Remove extra component"
-                                  onClick={() =>
-                                    setBundleExtras((prev) =>
-                                      prev.filter((row) => row.id !== extra.id),
-                                    )
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </div>
+                  <Label>What's included</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Tick the access groups this package covers. Ticked groups share one pool of sessions.
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 rounded-lg border border-border p-3 sm:grid-cols-2">
+                    {accessGroups.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">Loading access groups…</p>
+                    ) : (
+                      accessGroups.map((g) => (
+                        <label key={g.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={customGroupIds.includes(g.id)}
+                            onCheckedChange={(c) =>
+                              setCustomGroupIds((prev) =>
+                                c === true ? [...new Set([...prev, g.id])] : prev.filter((x) => x !== g.id),
+                              )
+                            }
+                          />
+                          {g.name}
+                        </label>
+                      ))
+                    )}
                   </div>
-                ) : null}
-                <div className="grid gap-2">
-                  <Label htmlFor="assign-existing-note">Optional note</Label>
-                  <Textarea
-                    id="assign-existing-note"
-                    value={existingNote}
-                    onChange={(e) => setExistingNote(e.target.value)}
-                    rows={2}
-                    placeholder="Shown in the member email if provided"
-                  />
-                </div>
-                <DialogFooter className="gap-2 sm:gap-0">
-                  <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={
-                      submitting || productsLoading || !existingCategory || !selectedProductId
-                    }
-                    className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                    onClick={() => openAssignConfirm("existing")}
-                  >
-                    {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Assign
-                  </Button>
-                </DialogFooter>
-              </TabsContent>
-
-              <TabsContent value="custom" className="space-y-4 pt-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="assign-custom-name">Package name</Label>
-                  <Input
-                    id="assign-custom-name"
-                    value={customName}
-                    onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="e.g. Guest pass"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Category</Label>
-                  <Select
-                    value={customCategory}
-                    onValueChange={(v) => {
-                      const next = v as CreditCategoryOrdered;
-                      setCustomCategory(next);
-                      setCustomClassTypes([...defaultAllowedClassTypesForCreditCategory(next)]);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {CUSTOM_CATEGORY_ITEMS.map((c) => (
-                        <SelectItem key={c.value} value={c.value}>
-                          {c.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
                   <div className="grid flex-1 gap-2">
@@ -1274,25 +1141,6 @@ export function AssignPackageDialog({
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Allowed class types</Label>
-                  <div className="grid gap-2 rounded-lg border border-border p-3">
-                    {CLASS_TYPE_OPTIONS.map((opt) => (
-                      <label
-                        key={opt.value}
-                        className="flex cursor-pointer items-center gap-2 text-sm"
-                      >
-                        <Checkbox
-                          checked={customClassTypes.includes(opt.value)}
-                          onCheckedChange={() => {
-                            toggleClassType(opt.value);
-                          }}
-                        />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid gap-2">
                   <Label htmlFor="assign-custom-note">Optional note</Label>
                   <Textarea
                     id="assign-custom-note"
@@ -1330,6 +1178,22 @@ export function AssignPackageDialog({
               {confirmTab === "existing" ? existingConfirmCopy : customConfirmCopy}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {confirmTab === "custom" ? (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={saveAsProduct}
+                onCheckedChange={(c) => setSaveAsProduct(c === true)}
+              />
+              <span>
+                <span className="block font-medium">Save this package for future use?</span>
+                <span className="block text-xs text-muted-foreground">
+                  Adds it to Admin → Products, switched off so it does not show on Pricing. Set a
+                  price and switch it on there if you want to sell it.
+                </span>
+              </span>
+            </label>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel type="button" disabled={submitting}>
               Cancel
