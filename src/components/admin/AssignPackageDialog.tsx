@@ -127,7 +127,11 @@ type ProductPick = {
   validity_days: number | null;
   allowed_class_types: string[] | null;
   is_active?: boolean;
+  pricing_section_id?: string | null;
 };
+
+/** Products with no section, or a section that no longer exists, are grouped here. */
+const NO_SECTION = "__no_section";
 
 const CUSTOM_CATEGORY_ITEMS: { value: CreditCategoryOrdered; label: string }[] =
   CREDIT_CATEGORY_ORDERED.map((value) => ({
@@ -266,7 +270,9 @@ export function AssignPackageDialog({
   const [tab, setTab] = useState<"existing" | "custom">("existing");
   const [products, setProducts] = useState<ProductPick[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
+  /** Selected pricing section id (same sections as Admin → Products), or NO_SECTION. */
   const [existingCategory, setExistingCategory] = useState<string>("");
+  const [sections, setSections] = useState<{ id: string; name: string }[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [existingNote, setExistingNote] = useState("");
   const [assignStartDate, setAssignStartDate] = useState("");
@@ -388,7 +394,9 @@ export function AssignPackageDialog({
       setProductsLoading(true);
       let query = supabase
         .from("products")
-        .select("id, name, credit_count, category, validity_days, allowed_class_types, is_addon, is_active")
+        .select(
+          "id, name, credit_count, category, validity_days, allowed_class_types, is_addon, is_active, pricing_section_id",
+        )
         // Staff packs and saved custom packages are switched off for sale but still assignable.
         .order("sort_order", { ascending: true })
         .order("category", { ascending: true })
@@ -413,9 +421,20 @@ export function AssignPackageDialog({
             validity_days: raw.validity_days == null ? null : Number(raw.validity_days),
             allowed_class_types: normalizeClassTypes(raw.allowed_class_types),
             is_active: raw.is_active !== false,
+            pricing_section_id: raw.pricing_section_id == null ? null : String(raw.pricing_section_id),
           })),
         );
       }
+      const { data: secData } = await supabase
+        .from("pricing_sections")
+        .select("id, name, sort_order")
+        .order("sort_order", { ascending: true });
+      setSections(
+        ((secData ?? []) as { id: string; name: string }[]).map((x) => ({
+          id: String(x.id),
+          name: String(x.name ?? ""),
+        })),
+      );
       setProductsLoading(false);
     })();
   }, [open, assigneeKey, includeAddons]);
@@ -428,22 +447,28 @@ export function AssignPackageDialog({
     return s;
   }, [products]);
 
+  const sectionKeyOf = useCallback(
+    (p: ProductPick) =>
+      p.pricing_section_id && sections.some((x) => x.id === p.pricing_section_id)
+        ? p.pricing_section_id
+        : NO_SECTION,
+    [sections],
+  );
+
+  /** Sections that have at least one product, in the Products page order. */
   const existingCategoryOptions = useMemo(() => {
-    const ordered: string[] = [...CREDIT_CATEGORY_ORDERED].filter((k) =>
-      categorySlugsInCatalog.has(k),
-    );
-    if (categorySlugsInCatalog.has("other")) {
-      ordered.push("other");
-    }
-    return ordered;
-  }, [categorySlugsInCatalog]);
+    const used = new Set(products.map(sectionKeyOf));
+    const opts = sections.filter((x) => used.has(x.id)).map((x) => ({ value: x.id, label: x.name }));
+    if (used.has(NO_SECTION)) opts.push({ value: NO_SECTION, label: "No section" });
+    return opts;
+  }, [products, sections, sectionKeyOf]);
 
   const productsInSelectedCategory = useMemo(() => {
     if (!existingCategory) return [];
     return products
-      .filter((p) => normalizeProductCategoryKey(p.category) === existingCategory)
+      .filter((p) => sectionKeyOf(p) === existingCategory)
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }, [products, existingCategory]);
+  }, [products, existingCategory, sectionKeyOf]);
 
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === selectedProductId) ?? null,
@@ -1008,7 +1033,7 @@ export function AssignPackageDialog({
   const openAssignConfirm = (kind: "existing" | "custom") => {
     if (kind === "existing") {
       if (!existingCategory) {
-        toast.error("Select a category.");
+        toast.error("Select a section.");
         return;
       }
       if (!selectedProductId) {
@@ -1100,7 +1125,7 @@ export function AssignPackageDialog({
 
               <TabsContent value="existing" className="space-y-4 pt-2">
                 <div className="grid gap-2">
-                  <Label>Category</Label>
+                  <Label>Section</Label>
                   {productsLoading ? (
                     <p className="text-sm text-muted-foreground">Loading products…</p>
                   ) : (
@@ -1112,12 +1137,12 @@ export function AssignPackageDialog({
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
+                        <SelectValue placeholder="Select section" />
                       </SelectTrigger>
                       <SelectContent>
-                        {existingCategoryOptions.map((slug) => (
-                          <SelectItem key={slug} value={slug}>
-                            {PRODUCT_CATEGORY_SLUG_LABEL[slug] ?? slug}
+                        {existingCategoryOptions.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -1129,9 +1154,9 @@ export function AssignPackageDialog({
                   {productsLoading ? (
                     <p className="text-sm text-muted-foreground">Loading products…</p>
                   ) : !existingCategory ? (
-                    <p className="text-sm text-muted-foreground">Choose a category first.</p>
+                    <p className="text-sm text-muted-foreground">Choose a section first.</p>
                   ) : productsInSelectedCategory.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No products in this category.</p>
+                    <p className="text-sm text-muted-foreground">No products in this section.</p>
                   ) : (
                     <Select
                       value={selectedProductId || undefined}
