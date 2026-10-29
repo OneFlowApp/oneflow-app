@@ -89,7 +89,7 @@ type AddonOffer = {
   price_zar: number;
   mat_included: boolean | null;
   shower_towel_included: boolean | null;
-  offer_with_section_ids: string[];
+  offer_with_product_ids: string[];
 };
 
 function formatPriceZar(zar: number) {
@@ -279,7 +279,7 @@ function PricingPage() {
       const { data: offerRows, error: offerErr } = await supabase
         .from("products")
         .select(
-          "id, name, description, price_zar, mat_included, shower_towel_included, offer_with_section_ids",
+          "id, name, description, price_zar, mat_included, shower_towel_included, offer_with_product_ids",
         )
         .eq("is_active", true)
         .eq("is_staff_only", false)
@@ -298,11 +298,11 @@ function PricingPage() {
             price_zar: Number(r.price_zar ?? 0),
             mat_included: r.mat_included as boolean | null,
             shower_towel_included: r.shower_towel_included as boolean | null,
-            offer_with_section_ids: Array.isArray(r.offer_with_section_ids)
-              ? (r.offer_with_section_ids as unknown[]).map(String)
+            offer_with_product_ids: Array.isArray(r.offer_with_product_ids)
+              ? (r.offer_with_product_ids as unknown[]).map(String)
               : [],
           }))
-          .filter((a) => a.offer_with_section_ids.length > 0),
+          .filter((a) => a.offer_with_product_ids.length > 0),
       );
     }
 
@@ -354,19 +354,9 @@ function PricingPage() {
     setOpenSections((prev) => ({ ...prev, [category]: !prev[category] }));
   };
 
-  /** Add-ons to offer with this pack, skipping any the pack already includes. */
-  const offersFor = (product: ProductRow): AddonOffer[] => {
-    const sectionId = product.pricing_section_id;
-    if (!sectionId) return [];
-    return addonOffers.filter((a) => {
-      if (a.id === product.id || !a.offer_with_section_ids.includes(sectionId)) return false;
-      const matOnly = a.mat_included === true && a.shower_towel_included !== true;
-      const towelOnly = a.shower_towel_included === true && a.mat_included !== true;
-      if (matOnly && product.mat_included) return false;
-      if (towelOnly && product.shower_towel_included) return false;
-      return true;
-    });
-  };
+  /** Add-ons set up in Admin → Products to be offered with this product. */
+  const offersFor = (product: ProductRow): AddonOffer[] =>
+    addonOffers.filter((a) => a.id !== product.id && a.offer_with_product_ids.includes(product.id));
 
   const buyNow = async (packId: string, addonIds?: string[]) => {
     if (buyingId) return;

@@ -371,10 +371,10 @@ serve(async (req) => {
     ? (raw.addon_ids as unknown[]).map((x) => String(x ?? "").trim()).filter(Boolean).slice(0, 5)
     : [];
   let addons: any[] = [];
-  if (addonIdsRaw.length > 0 && packRow.pricing_section_id) {
+  if (addonIdsRaw.length > 0) {
     const { data: addonRows } = await supabase
       .from("products")
-      .select("id, name, price_zar, is_active, is_staff_only, offer_with_section_ids")
+      .select("id, name, price_zar, is_active, is_staff_only, offer_with_product_ids")
       .in("id", addonIdsRaw);
     addons = ((addonRows ?? []) as any[]).filter(
       (a) =>
@@ -382,8 +382,8 @@ serve(async (req) => {
         a.is_active !== false &&
         a.is_staff_only !== true &&
         Number(a.price_zar) > 0 &&
-        Array.isArray(a.offer_with_section_ids) &&
-        a.offer_with_section_ids.map(String).includes(String(packRow.pricing_section_id)),
+        Array.isArray(a.offer_with_product_ids) &&
+        a.offer_with_product_ids.map(String).includes(String(packRow.id)),
     );
   }
   const addonCents = addons.reduce((sum, a) => sum + Math.round(Number(a.price_zar) * 100), 0);
