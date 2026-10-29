@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DeleteMemberSection } from "@/components/admin/DeleteMemberSection";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -120,6 +121,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 type ProfileRow = {
+  deleted_at?: string | null;
   id: string;
   first_name: string | null;
   last_name: string | null;
@@ -244,7 +246,7 @@ export function CustomerProfileSheet({
     const { data: p, error: pErr } = await supabase
       .from("profiles")
       .select(
-        "id, first_name, last_name, email, phone, date_of_birth, role, secondary_roles, avatar_url, waiver_accepted_at, created_at, notes, is_active",
+        "id, first_name, last_name, email, phone, date_of_birth, role, secondary_roles, avatar_url, waiver_accepted_at, created_at, notes, is_active, deleted_at",
       )
       .eq("id", customerId)
       .maybeSingle();
@@ -1254,6 +1256,24 @@ export function CustomerProfileSheet({
                   Save notes
                 </Button>
               </section>
+
+              {canManage && !profile.deleted_at ? (
+                <DeleteMemberSection
+                  profileId={profile.id}
+                  memberName={fullName}
+                  memberRole={profile.role}
+                  onDeleted={() => {
+                    onProfileUpdated?.();
+                    onOpenChange(false);
+                  }}
+                />
+              ) : null}
+              {profile.deleted_at ? (
+                <p className="border-t border-border pt-6 text-sm text-muted-foreground">
+                  Deleted on {new Date(profile.deleted_at).toLocaleDateString("en-ZA")}. Login removed
+                  and contact details wiped.
+                </p>
+              ) : null}
             </div>
           )}
         </SheetContent>
