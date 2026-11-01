@@ -647,7 +647,7 @@ serve(async (req) => {
   ];
   if (openAccessUpgrade) {
     lineItems.push({
-      displayName: "Open Access upgrade (Longkloof + Green Point)",
+      displayName: "Access to: Longkloof & Green Point",
       quantity: 1,
       pricingDetails: { price: upgradeCents },
     });
@@ -695,7 +695,7 @@ serve(async (req) => {
     lineItems,
     customer_reference: yocoCustomerReference(buyerName),
     customer_description: yocoCustomerDescription(packName),
-    description: `${packName}${openAccessUpgrade ? " + Open Access" : ""}${
+    description: `${packName}${openAccessUpgrade ? " + Access to: Longkloof & Green Point" : ""}${
       addons.length > 0 ? ` + ${addons.map((a) => a.name).join(" + ")}` : ""
     } — ${buyerName}${
       lateFeeApplied ? ` + R${Math.round(lateFeeCents / 100)} outstanding fees` : ""

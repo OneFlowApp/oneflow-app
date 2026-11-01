@@ -166,7 +166,7 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {p.openAccess ? (
                     <span className="rounded-full bg-[#e8efe3] px-2 py-0.5 text-[11px] font-semibold text-[#3d4f36]">
-                      Longkloof + Green Point
+                      Access to: Longkloof &amp; Green Point
                     </span>
                   ) : null}
                   {p.matAndTowel ? (

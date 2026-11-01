@@ -587,7 +587,7 @@ function PricingPage() {
                                 </div>
                                 {isOpenAccess ? (
                                   <span className="mt-1.5 inline-flex items-center rounded-full border border-[#c5d4b8]/80 bg-[#e8efe3] px-2 py-0.5 text-[11px] font-semibold text-[#3d4f36] dark:border-border dark:bg-muted dark:text-foreground">
-                                    Longkloof + Green Point
+                                    Access to: Longkloof &amp; Green Point
                                   </span>
                                 ) : null}
                                 {credits ? (
@@ -623,7 +623,7 @@ function PricingPage() {
                                 {canUpgrade ? (
                                   <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#c5d4b8]/50 bg-[#fafbf8]/90 px-3 py-2.5 dark:border-border dark:bg-muted/30">
                                     <span className="text-sm font-medium text-foreground">
-                                      Use at both branches (Longkloof + Green Point) +
+                                      Access to: Longkloof &amp; Green Point +
                                       {formatPriceZar(upgradePrice)}
                                     </span>
                                     <Switch
@@ -631,7 +631,7 @@ function PricingPage() {
                                       onCheckedChange={(v) =>
                                         setOpenAccessUpgradeFor((prev) => ({ ...prev, [p.id]: v }))
                                       }
-                                      aria-label={`Use ${p.name} at both branches`}
+                                      aria-label={`${p.name}: access to Longkloof and Green Point`}
                                     />
                                   </div>
                                 ) : null}
