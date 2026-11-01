@@ -160,6 +160,15 @@ function addMinutesToTimeInput(timeStr: string, minutes: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+function formatSeriesDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Africa/Johannesburg",
+  });
+}
+
 function combineDateTimeLocal(dateStr: string, timeStr: string): Date {
   const [yy, mo, dd] = dateStr.split("-").map(Number);
   const [hh, mm] = timeStr.split(":").map(Number);
@@ -388,6 +397,41 @@ function SchedulePage() {
   const [guideChangeScope, setGuideChangeScope] = useState<RecurringScope | null>(null);
   /** Editing a class in a weekly series: change just this one, or this and all future ones. */
   const [editScope, setEditScope] = useState<RecurringScope>("single");
+  /** Run of the weekly series being edited: first and last class, how many, how many left. */
+  const [seriesInfo, setSeriesInfo] = useState<{
+    first: string;
+    last: string;
+    total: number;
+    remaining: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!dialogOpen || !editingRecurringGroupId) {
+      setSeriesInfo(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("classes")
+        .select("starts_at")
+        .eq("recurring_group_id", editingRecurringGroupId)
+        .eq("is_cancelled", false)
+        .order("starts_at", { ascending: true });
+      if (cancelled || error || !data || data.length === 0) return;
+      const starts = (data as { starts_at: string }[]).map((r) => r.starts_at);
+      const now = Date.now();
+      setSeriesInfo({
+        first: starts[0]!,
+        last: starts[starts.length - 1]!,
+        total: starts.length,
+        remaining: starts.filter((x) => new Date(x).getTime() >= now).length,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dialogOpen, editingRecurringGroupId]);
   const [recurringScopeOpen, setRecurringScopeOpen] = useState(false);
   const [recurringScopeAction, setRecurringScopeAction] = useState<"edit" | "bulk-reassign" | null>(
     null,
@@ -1994,6 +2038,25 @@ function SchedulePage() {
           </DialogHeader>
           {dialogMode === "edit" && editingRecurringGroupId ? (
             <div className="rounded-lg border border-[#c5d4b8]/70 bg-[#f4f7f0]/80 px-3 py-3">
+              {seriesInfo ? (
+                <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { label: "First class", value: formatSeriesDate(seriesInfo.first) },
+                    { label: "Last class", value: formatSeriesDate(seriesInfo.last) },
+                    {
+                      label: "Weeks",
+                      value: `${seriesInfo.total} (${seriesInfo.remaining} to go)`,
+                    },
+                  ].map((x) => (
+                    <div key={x.label} className="rounded-md bg-card px-2 py-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {x.label}
+                      </p>
+                      <p className="text-sm font-semibold text-foreground">{x.value}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <p className="text-sm font-medium text-[#3d4f36]">This class repeats weekly. Edit:</p>
               <RadioGroup
                 value={editScope}
