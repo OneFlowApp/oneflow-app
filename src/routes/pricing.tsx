@@ -623,8 +623,8 @@ function PricingPage() {
                                 {canUpgrade ? (
                                   <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-[#c5d4b8]/50 bg-[#fafbf8]/90 px-3 py-2.5 dark:border-border dark:bg-muted/30">
                                     <span className="text-sm font-medium text-foreground">
-                                      Access to: Longkloof &amp; Green Point +
-                                      {formatPriceZar(upgradePrice)}
+                                      Upgrade {formatPriceZar(upgradePrice)} for &ldquo;Access to: Longkloof &amp;
+                                      Green Point&rdquo;
                                     </span>
                                     <Switch
                                       checked={upgradeOn}
