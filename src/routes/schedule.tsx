@@ -78,6 +78,7 @@ type ClassRow = {
   guide_name: string | null;
   description?: string;
   product_id?: string | null;
+  is_free?: boolean | null;
 };
 
 /** Denormalized `classes.guide_name` from PostgREST (text); never guess a label when missing. */
@@ -643,7 +644,7 @@ function ScheduleRow({
   // When full + not booked + no overlap, the button opens the sheet to
   // join the waitlist (or manage an existing entry).
   const canWaitlist = !isPast && !alreadyBooked && full && !hasOverlap;
-  const isFreeClass = isFreeBeginnerClass(session.class_type);
+  const isFreeClass = session.is_free === true || isFreeBeginnerClass(session.class_type);
 
   return (
     <div

@@ -18,6 +18,8 @@ export type ScheduleDayClassRow = {
   guide_name: string | null;
   description?: string;
   product_id?: string | null;
+  /** Ticked "Free class" in Admin → Schedule: members book with no credit or payment. */
+  is_free?: boolean | null;
 };
 
 export async function fetchScheduleDayClasses(
@@ -28,7 +30,7 @@ export async function fetchScheduleDayClasses(
   const { data, error } = await supabase
     .from("classes")
     .select(
-      "id, name, title_override, guide_name, class_type, class_type_id, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id",
+      "id, name, title_override, guide_name, class_type, class_type_id, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id, is_free",
     )
     .gte("starts_at", startUtcIso)
     .lte("starts_at", endUtcIso)

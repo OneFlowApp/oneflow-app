@@ -105,6 +105,7 @@ type ClassRow = {
   /** Set only for one-offs; otherwise the title derives from category + type. */
   title_override: string | null;
   credit_covered: boolean;
+  is_free?: boolean | null;
   location: string;
   starts_at: string;
   ends_at: string;
@@ -351,6 +352,8 @@ function SchedulePage() {
   const [typeSelection, setTypeSelection] = useState<string>("");
   const [titleOverride, setTitleOverride] = useState("");
   const [creditCovered, setCreditCovered] = useState(true);
+  /** "Free class": members book with no credit or payment. */
+  const [isFree, setIsFree] = useState(false);
   const [location, setLocation] = useState<string>("Studio 1");
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
@@ -379,6 +382,8 @@ function SchedulePage() {
   const [editingOriginalGuideSelectValue, setEditingOriginalGuideSelectValue] =
     useState<string>("none");
   const [guideChangeScope, setGuideChangeScope] = useState<RecurringScope | null>(null);
+  /** Editing a class in a weekly series: change just this one, or this and all future ones. */
+  const [editScope, setEditScope] = useState<RecurringScope>("single");
   const [recurringScopeOpen, setRecurringScopeOpen] = useState(false);
   const [recurringScopeAction, setRecurringScopeAction] = useState<"edit" | "bulk-reassign" | null>(
     null,
@@ -585,7 +590,7 @@ function SchedulePage() {
     const { data, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, class_type_id, title_override, credit_covered, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
+        "id, name, class_type, class_type_id, title_override, credit_covered, is_free, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
       )
       .gte("starts_at", fromIso)
       .lt("starts_at", toExclusiveIso)
@@ -807,6 +812,7 @@ function SchedulePage() {
     setTypeSelection(typeGroups[0]?.types[0] ? `type:${typeGroups[0].types[0].id}` : "");
     setTitleOverride("");
     setCreditCovered(true);
+    setIsFree(false);
     setLocation("Studio 1");
     setGuideId(GUIDE_DIALOG_NONE);
     setDateStr(toDateInputValue(new Date()));
@@ -958,12 +964,14 @@ function SchedulePage() {
     setDialogMode("edit");
     setEditingId(c.id);
     setEditingRecurringGroupId(c.recurring_group_id);
+    setEditScope("single");
     setEditingStartsAt(c.starts_at);
     setGuideChangeScope(null);
     setClassType(c.class_type || "yoga");
     setTypeSelection(typeSelectionForClass(c));
     setTitleOverride(c.title_override ?? "");
     setCreditCovered(c.credit_covered !== false);
+    setIsFree(c.is_free === true);
     setLocation(c.location || "Studio 1");
     const s = new Date(c.starts_at);
     const e = new Date(c.ends_at);
@@ -1043,6 +1051,7 @@ function SchedulePage() {
       class_type_id: typeColumns?.class_type_id ?? null,
       title_override: titleOverride.trim() ? titleOverride.trim() : null,
       credit_covered: creditCovered,
+      is_free: isFree,
       location,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
@@ -1097,6 +1106,7 @@ function SchedulePage() {
           class_type_id: base.class_type_id,
           title_override: base.title_override,
           credit_covered: base.credit_covered,
+          is_free: base.is_free,
           location: base.location,
           capacity: base.capacity,
           description: base.description,
@@ -1111,11 +1121,30 @@ function SchedulePage() {
           .eq("is_cancelled", false);
         if (seriesErr) throw seriesErr;
 
-        const { error: timeErr } = await supabase
+        // Move every future class by the same amount as this one (new time or day),
+        // and give them all the new duration.
+        const shiftMs = start.getTime() - new Date(editingStartsAt).getTime();
+        const durationMs = end.getTime() - start.getTime();
+        const { data: seriesRows, error: listErr } = await supabase
           .from("classes")
-          .update({ starts_at: base.starts_at, ends_at: base.ends_at })
-          .eq("id", editingId);
-        if (timeErr) throw timeErr;
+          .select("id, starts_at")
+          .eq("recurring_group_id", editingRecurringGroupId)
+          .gte("starts_at", editingStartsAt)
+          .eq("is_cancelled", false);
+        if (listErr) throw listErr;
+        if (shiftMs !== 0 || durationMs > 0) {
+          for (const r of (seriesRows ?? []) as { id: string; starts_at: string }[]) {
+            const newStart = new Date(new Date(r.starts_at).getTime() + shiftMs);
+            const { error: timeErr } = await supabase
+              .from("classes")
+              .update({
+                starts_at: newStart.toISOString(),
+                ends_at: new Date(newStart.getTime() + durationMs).toISOString(),
+              })
+              .eq("id", r.id);
+            if (timeErr) throw timeErr;
+          }
+        }
         toast.success("This and all future classes in the series updated");
       } else {
         const { error } = await supabase.from("classes").update(base).eq("id", editingId);
@@ -1143,16 +1172,7 @@ function SchedulePage() {
     if (!validateForm()) return;
 
     if (editingId) {
-      if (guideChangedOnRecurringEdit) {
-        await performEditSave(guideChangeScope ?? "single");
-        return;
-      }
-      if (editingRecurringGroupId) {
-        setRecurringScopeAction("edit");
-        setRecurringScopeOpen(true);
-        return;
-      }
-      await performEditSave("single");
+      await performEditSave(editingRecurringGroupId ? editScope : "single");
       return;
     }
 
@@ -1175,6 +1195,7 @@ function SchedulePage() {
       class_type_id: typeColumns?.class_type_id ?? null,
       title_override: titleOverride.trim() ? titleOverride.trim() : null,
       credit_covered: creditCovered,
+      is_free: isFree,
       location,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
@@ -1952,6 +1973,36 @@ function SchedulePage() {
                   : "New class"}
             </DialogTitle>
           </DialogHeader>
+          {dialogMode === "edit" && editingRecurringGroupId ? (
+            <div className="rounded-lg border border-[#c5d4b8]/70 bg-[#f4f7f0]/80 px-3 py-3">
+              <p className="text-sm font-medium text-[#3d4f36]">This class repeats weekly. Edit:</p>
+              <RadioGroup
+                value={editScope}
+                onValueChange={(v) => setEditScope(v as RecurringScope)}
+                className="mt-2 gap-2.5"
+              >
+                <div className="flex items-center gap-2.5">
+                  <RadioGroupItem value="single" id="edit-scope-single" />
+                  <Label htmlFor="edit-scope-single" className="cursor-pointer font-normal">
+                    This class only
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <RadioGroupItem value="future" id="edit-scope-future" />
+                  <Label htmlFor="edit-scope-future" className="cursor-pointer font-normal">
+                    This and all future classes in the series
+                  </Label>
+                </div>
+              </RadioGroup>
+              {editScope === "future" ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Guide, class, free, capacity and description apply to every future class. A
+                  new time or day moves them all by the same amount, and a new end time sets
+                  the duration for all of them.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {dialogMode === "bulk-reassign" ? (
             <div className="grid gap-3 py-2">
               <p className="text-sm text-muted-foreground">
@@ -1995,7 +2046,7 @@ function SchedulePage() {
           <div className="grid gap-3 py-2">
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <Label>Type</Label>
+                <Label>Class</Label>
                 <Select
                   value={typeSelection}
                   onValueChange={setTypeSelection}
@@ -2095,29 +2146,6 @@ function SchedulePage() {
                     ))}
                 </SelectContent>
               </Select>
-              {guideChangedOnRecurringEdit ? (
-                <div className="mt-2 rounded-lg border border-[#c5d4b8]/70 bg-[#f4f7f0]/80 px-3 py-3">
-                  <p className="text-sm font-medium text-[#3d4f36]">Apply guide change to</p>
-                  <RadioGroup
-                    value={guideChangeScope ?? "single"}
-                    onValueChange={(v) => setGuideChangeScope(v as RecurringScope)}
-                    className="mt-2 gap-2.5"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <RadioGroupItem value="single" id="edit-guide-scope-single" />
-                      <Label htmlFor="edit-guide-scope-single" className="cursor-pointer font-normal">
-                        This class only
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <RadioGroupItem value="future" id="edit-guide-scope-future" />
-                      <Label htmlFor="edit-guide-scope-future" className="cursor-pointer font-normal">
-                        This and all future classes
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-              ) : null}
             </div>
             ) : (
               <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
@@ -2180,6 +2208,27 @@ function SchedulePage() {
                 disabled={!canManage}
               />
             </div>
+            <label
+              htmlFor="cls-free"
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5",
+                isFree ? "border-[#a3b693] bg-[#e8efe3]/50" : "border-border",
+              )}
+            >
+              <Checkbox
+                id="cls-free"
+                className="mt-0.5"
+                checked={isFree}
+                onCheckedChange={(c) => setIsFree(c === true)}
+                disabled={!canManage}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">Free / complimentary class</span>
+                <span className="block text-xs text-muted-foreground">
+                  Members book with no credit and no payment. Shows as FREE on the schedule.
+                </span>
+              </span>
+            </label>
             {selectedCategorySlug === "event" ? (
               <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
                 <div className="min-w-0">
