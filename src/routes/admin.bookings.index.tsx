@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { STUDIO_ROOMS } from "@/lib/studioRooms";
 import {
   ChevronRight,
   Download,
@@ -175,7 +176,7 @@ function rosterStatusSortRank(status: BookingStatus): number {
   return 3;
 }
 
-const SESSION_LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
+const SESSION_LOCATIONS = STUDIO_ROOMS;
 
 function sessionMatchesClassTypeFilter(classType: string, filter: string): boolean {
   if (filter === "all") return true;
