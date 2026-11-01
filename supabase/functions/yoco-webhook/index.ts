@@ -127,7 +127,7 @@ async function notifyOpenAccessPurchase(details: any) {
   const rows = Object.entries(details)
     .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#555">${escapeHtml(k)}</td><td style="padding:4px 0"><b>${escapeHtml(v)}</b></td></tr>`)
     .join("");
-  const html = `<p>A member has bought an <b>Open Access</b> pack at Longkloof. Please load them on the Green Point side.</p><table>${rows}</table>`;
+  const html = `<p>A member has bought a pack with <b>Access to: Longkloof &amp; Green Point</b> at Longkloof. Please load them on the Green Point side.</p><table>${rows}</table>`;
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -135,7 +135,7 @@ async function notifyOpenAccessPurchase(details: any) {
       body: JSON.stringify({
         from: "One Flow <noreply@oneflow.co.za>",
         to: [OPEN_ACCESS_NOTIFY_EMAIL],
-        subject: `Open Access purchase: ${details["Member"] ?? ""} (${details["Pack"] ?? ""})`,
+        subject: `Longkloof & Green Point purchase: ${details["Member"] ?? ""} (${details["Pack"] ?? ""})`,
         html,
       }),
     });
@@ -409,7 +409,7 @@ serve(async (req) => {
       "Phone": w.phone ?? "",
       "Pack": product.name,
       "Includes": rows.slice(0, mainRowCount).map((r) => `${r.product_name}: ${r.is_unlimited ? "Unlimited" : r.credits_total}`).join("; "),
-      "Open Access upgrade": upgraded ? `Yes (+R${upgradeAmount})` : "No, Open Access pack",
+      "Upgraded to Longkloof & Green Point": upgraded ? `Yes (+R${upgradeAmount})` : "No, pack already includes both",
       "Amount paid": paidZar !== null ? `R${paidZar.toFixed(2)}` : "",
       "Purchased": now.toISOString().slice(0, 16).replace("T", " ") + " UTC",
       "Expires": expires,

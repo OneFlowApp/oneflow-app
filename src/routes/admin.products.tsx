@@ -246,7 +246,7 @@ function AdminProductTableRow({
           <span className="truncate">{p.name}</span>
           {p.access_scope === "open_access" && (
             <span className="inline-flex shrink-0 rounded-full bg-[#3d4f36] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-              Open Access
+              Longkloof &amp; Green Point
             </span>
           )}
         </div>
@@ -704,7 +704,7 @@ function ProductsPage() {
     const upgradePriceParsed =
       accessScope === "open_access" ? null : parseOptionalZar(upgradePriceZar);
     if (upgradePriceParsed === undefined) {
-      toast.error("Enter a valid Open Access upgrade price");
+      toast.error("Enter a valid upgrade price for Longkloof & Green Point");
       return;
     }
 
@@ -1232,8 +1232,8 @@ function ProductsPage() {
               <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup">
                 {(
                   [
-                    { value: "longkloof", label: "Longkloof only" },
-                    { value: "open_access", label: "Open Access: Longkloof + Green Point" },
+                    { value: "longkloof", label: "Access to: Longkloof" },
+                    { value: "open_access", label: "Access to: Longkloof & Green Point" },
                   ] as const
                 ).map((opt) => (
                   <button
@@ -1257,7 +1257,7 @@ function ProductsPage() {
 
             {accessScope !== "open_access" && (
               <div>
-                <Label htmlFor="prod-upgrade-price">Open Access upgrade price (R)</Label>
+                <Label htmlFor="prod-upgrade-price">Upgrade price for access to Longkloof &amp; Green Point (R)</Label>
                 <input
                   id="prod-upgrade-price"
                   type="number"
