@@ -19,6 +19,8 @@ export type ClassCategoryRow = {
   sort_order: number;
   /** Enum types in this category inherit. Seeded categories match their slug. */
   legacy_class_type: string;
+  /** Top level group in Master (On The Mat, Reformer, Wellzone, Events). */
+  parent_group?: string | null;
 };
 
 export type ClassTypeRow = {
@@ -52,7 +54,7 @@ export const EMPTY_CLASS_CATALOG: ClassCatalog = {
   categoryById: new Map(),
 };
 
-const CATEGORY_COLUMNS = "id, slug, name, colour, sort_order, legacy_class_type";
+const CATEGORY_COLUMNS = "id, slug, name, colour, sort_order, legacy_class_type, parent_group";
 const TYPE_COLUMNS =
   "id, category_id, slug, name, legacy_class_type, is_free_intro, is_guided, colour, is_active, sort_order, deleted_at, default_location";
 

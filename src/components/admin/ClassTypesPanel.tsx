@@ -17,7 +17,7 @@
  * be created from this dialog.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronRight, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -59,6 +59,9 @@ import {
 } from "@/components/ui/dialog";
 
 type Props = { canManage: boolean };
+
+/** Top level groups shown in Master → Class types. Each category sits under one. */
+const DEFAULT_PARENT_GROUPS = ["On The Mat", "Reformer", "Wellzone", "Events"];
 
 type DraftType = {
   name: string;
@@ -129,6 +132,69 @@ export function ClassTypesPanel({ canManage }: Props) {
     [categories, catalog.types],
   );
 
+  /** Categories grouped under their parent (On The Mat, Reformer, Wellzone, Events). */
+  const parents = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, typeof grouped>();
+    for (const g of grouped) {
+      const parent = g.category.parent_group?.trim() || "Other";
+      if (!map.has(parent)) {
+        map.set(parent, []);
+        order.push(parent);
+      }
+      map.get(parent)!.push(g);
+    }
+    return order.map((name) => ({ name, groups: map.get(name)! }));
+  }, [grouped]);
+
+  const parentOptions = useMemo(() => {
+    const set = new Set<string>(DEFAULT_PARENT_GROUPS);
+    for (const c of catalog.categories) if (c.parent_group?.trim()) set.add(c.parent_group.trim());
+    return [...set];
+  }, [catalog.categories]);
+
+  const [movingId, setMovingId] = useState<string | null>(null);
+
+  /** Up/down arrows: swap with the neighbour, renumbering the category if orders clash. */
+  const moveType = async (types: ClassTypeRow[], index: number, dir: -1 | 1) => {
+    if (!canManage) return;
+    const a = types[index];
+    const b = types[index + dir];
+    if (!a || !b) return;
+    setMovingId(a.id);
+    const next = types.slice();
+    next[index] = b;
+    next[index + dir] = a;
+    const updates = next.map((t, i) => ({ id: t.id, sort_order: (i + 1) * 10 }));
+    for (const u of updates) {
+      const current = types.find((t) => t.id === u.id);
+      if (current && current.sort_order === u.sort_order) continue;
+      const { error } = await supabase.from("class_types").update({ sort_order: u.sort_order }).eq("id", u.id);
+      if (error) {
+        setMovingId(null);
+        toast.error(supabaseErrorMessage(error, "Could not reorder"));
+        await reload();
+        return;
+      }
+    }
+    setMovingId(null);
+    await reload();
+  };
+
+  const setParent = async (categoryId: string, parent: string) => {
+    if (!canManage) return;
+    const { error } = await supabase
+      .from("class_categories")
+      .update({ parent_group: parent })
+      .eq("id", categoryId);
+    if (error) {
+      toast.error(supabaseErrorMessage(error, "Could not move this category"));
+      return;
+    }
+    toast.success(`Moved under ${parent}`);
+    await reload();
+  };
+
   const deletedTypes = useMemo(
     () =>
       catalog.types
@@ -180,11 +246,13 @@ export function ClassTypesPanel({ canManage }: Props) {
       toast.error("Pick a category");
       return;
     }
-    const sortOrder = Number(draft.sortOrder);
-    if (!Number.isFinite(sortOrder)) {
-      toast.error("Order must be a number");
-      return;
-    }
+    // Order is set with the arrows in the list. New types go to the end of their category.
+    const sortOrder = editingRow
+      ? editingRow.sort_order
+      : Math.max(
+          0,
+          ...catalog.types.filter((t) => t.category_id === draft.categoryId).map((t) => t.sort_order),
+        ) + 10;
     const category = catalog.categoryById.get(draft.categoryId);
     if (!category) {
       toast.error("That category no longer exists — reload and try again");
@@ -351,8 +419,12 @@ export function ClassTypesPanel({ canManage }: Props) {
         ) : null}
       </div>
 
-      <div className="space-y-4">
-        {grouped.map(({ category, types }) => (
+      <div className="space-y-6">
+        {parents.map((parent) => (
+          <div key={parent.name}>
+            <h2 className="mb-2 font-display text-base font-bold text-foreground">{parent.name}</h2>
+            <div className="space-y-4 border-l-2 border-[#c5d4b8] pl-3">
+        {parent.groups.map(({ category, types }) => (
           <section key={category.id}>
             <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
               <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
@@ -361,12 +433,26 @@ export function ClassTypesPanel({ canManage }: Props) {
                   — {types.length} type{types.length === 1 ? "" : "s"}
                 </span>
               </h2>
+              {canManage ? (
+                <Select value={category.parent_group?.trim() || ""} onValueChange={(v) => void setParent(category.id, v)}>
+                  <SelectTrigger className="h-7 w-auto gap-1 border-none bg-transparent px-1 text-xs text-muted-foreground shadow-none">
+                    <SelectValue placeholder="Choose group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {parentOptions.map((g) => (
+                      <SelectItem key={g} value={g}>
+                        Under {g}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
             </div>
             {types.length === 0 ? (
               <p className="px-1 py-1.5 text-xs text-muted-foreground">No types yet</p>
             ) : (
               <ul className="overflow-hidden rounded-xl border border-border bg-card">
-                {types.map((t) => {
+                {types.map((t, i) => {
                   const theme = classTypeTheme(t.slug);
                   return (
                     <li key={t.id} className="border-b border-border last:border-b-0">
@@ -410,7 +496,7 @@ export function ClassTypesPanel({ canManage }: Props) {
                           </div>
                           <p className="truncate text-[11px] text-muted-foreground">
                             {t.default_location ? `${t.default_location} · ` : ""}
-                            <span className="font-mono">{t.slug}</span> · order {t.sort_order}
+                            <span className="font-mono">{t.slug}</span>
                           </p>
                         </div>
                         <div
@@ -418,6 +504,32 @@ export function ClassTypesPanel({ canManage }: Props) {
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => e.stopPropagation()}
                         >
+                          {canManage ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                disabled={i === 0 || movingId !== null}
+                                onClick={() => void moveType(types, i, -1)}
+                                aria-label={`Move ${t.name} up`}
+                              >
+                                <ArrowUp className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                disabled={i === types.length - 1 || movingId !== null}
+                                onClick={() => void moveType(types, i, 1)}
+                                aria-label={`Move ${t.name} down`}
+                              >
+                                <ArrowDown className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          ) : null}
                           {togglingId === t.id ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                           ) : null}
@@ -435,6 +547,9 @@ export function ClassTypesPanel({ canManage }: Props) {
               </ul>
             )}
           </section>
+        ))}
+            </div>
+          </div>
         ))}
       </div>
 
@@ -576,15 +691,6 @@ export function ClassTypesPanel({ canManage }: Props) {
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Fills the location when you schedule this class in Week.
               </p>
-            </div>
-            <div>
-              <Label htmlFor="ct-order">Order within category</Label>
-              <Input
-                id="ct-order"
-                type="number"
-                value={draft.sortOrder}
-                onChange={(e) => setDraft((d) => ({ ...d, sortOrder: e.target.value }))}
-              />
             </div>
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
               <div className="min-w-0">
