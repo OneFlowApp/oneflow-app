@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { effectiveRole } from "@/lib/roleAccess";
-import { useCallback, useEffect, useState } from "react";
+import { canSeeMemberPrivateDetails, effectiveRole } from "@/lib/roleAccess";
+import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Undo2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -68,7 +69,12 @@ type BookingRow = {
   towelAddon: boolean;
   hasSageCredit: boolean;
   memberRole: string | null;
+  firstName: string;
+  lastName: string;
+  bookedAt: string;
 };
+
+type RosterSort = "just_booked" | "first_name" | "last_name";
 
 function one<T>(v: T | T[] | null | undefined): T | null {
   if (v == null) return null;
@@ -107,6 +113,10 @@ function BookingClassDetailPage() {
   const { classId } = Route.useParams();
   const { profile } = useAuth();
   const isGuide = effectiveRole(profile) === "guide";
+  /** Full member profile (contact details, history) only for roles allowed to see them. */
+  const canOpenProfile = canSeeMemberPrivateDetails(profile);
+  const [rosterSort, setRosterSort] = useState<RosterSort>("just_booked");
+  const [profileId, setProfileId] = useState<string | null>(null);
 
   const [cls, setCls] = useState<ClassRow | null>(null);
   const [roster, setRoster] = useState<BookingRow[]>([]);
@@ -151,7 +161,7 @@ function BookingClassDetailPage() {
     const { data: bookingData, error: bookingErr } = await supabase
       .from("bookings")
       .select(
-        "id, status, profile_id, class_id, payment_method, mat_addon, towel_addon, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+        "id, status, profile_id, class_id, payment_method, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
       )
       .eq("class_id", classId)
       .order("created_at", { ascending: true });
@@ -173,6 +183,7 @@ function BookingClassDetailPage() {
       payment_method: string | null;
       mat_addon: boolean | null;
       towel_addon: boolean | null;
+      created_at: string | null;
       profiles:
         | { first_name: string; last_name: string; role?: string | null }
         | { first_name: string; last_name: string; role?: string | null }[]
@@ -209,6 +220,9 @@ function BookingClassDetailPage() {
         towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
         hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
         memberRole: prof?.role ?? null,
+        firstName: fn,
+        lastName: ln,
+        bookedAt: r.created_at ?? "",
       });
     }
 
@@ -287,6 +301,22 @@ function BookingClassDetailPage() {
   const badgeType = displayClassType((cls ? classTypeSlugFor(cls) : null) ?? cls?.class_type);
   const typeTheme = classTypeTheme(badgeType);
 
+  const sortedRoster = useMemo(() => {
+    const list = roster.slice();
+    const byText = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: "base" });
+    if (rosterSort === "first_name") {
+      list.sort((a, b) => byText(a.firstName, b.firstName) || byText(a.lastName, b.lastName));
+    } else if (rosterSort === "last_name") {
+      list.sort((a, b) => byText(a.lastName, b.lastName) || byText(a.firstName, b.firstName));
+    } else {
+      list.sort((a, b) => b.bookedAt.localeCompare(a.bookedAt));
+    }
+    return list;
+  }, [roster, rosterSort]);
+
+  /** Counted from the list itself so it always matches the names shown. */
+  const activeCount = roster.filter((b) => b.status !== "cancelled").length;
+
   return (
     <div className="pb-10">
       <div className="mb-4">
@@ -351,8 +381,22 @@ function BookingClassDetailPage() {
           >
             <TypeBadge type={badgeType} size="sm" />
             <span className="text-sm font-medium tabular-nums text-muted-foreground">
-              {cls.booked_count}/{cls.capacity} booked
+              {activeCount}/{cls.capacity} booked
             </span>
+            {roster.length > 1 ? (
+              <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+                Sort
+                <select
+                  value={rosterSort}
+                  onChange={(e) => setRosterSort(e.target.value as RosterSort)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground"
+                >
+                  <option value="just_booked">Just booked</option>
+                  <option value="first_name">First name</option>
+                  <option value="last_name">Last name</option>
+                </select>
+              </label>
+            ) : null}
           </div>
 
           {roster.length === 0 ? (
@@ -361,7 +405,7 @@ function BookingClassDetailPage() {
             </div>
           ) : (
             <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-              {roster.map((b) => {
+              {sortedRoster.map((b) => {
                 const isIn = b.status === "attended";
                 const isCancelled = b.status === "cancelled";
                 const isNoShow = b.status === "no-show";
@@ -372,7 +416,17 @@ function BookingClassDetailPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <p className="flex min-w-0 flex-wrap items-center gap-1.5 font-medium text-foreground">
-                        <span className="min-w-0 truncate">{b.memberShort}</span>
+                        {canOpenProfile && b.profile_id ? (
+                          <button
+                            type="button"
+                            onClick={() => setProfileId(b.profile_id)}
+                            className="min-w-0 truncate text-left underline-offset-2 hover:underline"
+                          >
+                            {b.memberFull}
+                          </button>
+                        ) : (
+                          <span className="min-w-0 truncate">{b.memberFull}</span>
+                        )}
                         <RosterAddonPills
                           mat={b.matAddon}
                           towel={b.towelAddon}
@@ -431,6 +485,18 @@ function BookingClassDetailPage() {
       )}
 
       <WalkInSheet open={walkInOpen} onOpenChange={setWalkInOpen} onDone={() => void load()} />
+      {canOpenProfile ? (
+        <CustomerProfileSheet
+          customerId={profileId}
+          open={profileId !== null}
+          onOpenChange={(o) => {
+            if (!o) setProfileId(null);
+          }}
+          viewerRole={effectiveRole(profile)}
+          variant="customer"
+          onProfileUpdated={() => void load()}
+        />
+      ) : null}
 
       <Sheet
         open={removeTarget !== null}
