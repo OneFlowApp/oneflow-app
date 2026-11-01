@@ -14,6 +14,7 @@ export type BookingSheetSession = {
   id: string;
   class_type: string;
   product_id?: string | null;
+  is_free?: boolean | null;
 };
 
 export type BookingSheetData = {
@@ -89,7 +90,7 @@ export async function fetchBookingSheetData(
   } | null;
   const ticket = ticketRow && typeof ticketRow.price_zar === "number" ? ticketRow : null;
   const complimentaryTicket = isComplimentaryClassTicket(ticket);
-  const skipPayment = classSkipsPayment(session.class_type, catalog);
+  const skipPayment = session.is_free === true || classSkipsPayment(session.class_type, catalog);
 
   const creditsPromise = complimentaryTicket
     ? Promise.resolve({ data: null, error: null })
