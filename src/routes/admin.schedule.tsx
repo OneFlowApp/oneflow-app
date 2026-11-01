@@ -51,6 +51,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -159,6 +160,75 @@ function addMinutesToTimeInput(timeStr: string, minutes: number): string {
   const total = ((hh * 60 + mm + minutes) % (24 * 60) + 24 * 60) % (24 * 60);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
+
+type RoomClash = { index: number; title: string; startsAt: string; endsAt: string };
+
+/**
+ * Classes already in `room` that overlap any of `intervals` (back to back is fine).
+ * `excludeIds` are the classes being moved, so they never clash with themselves.
+ */
+async function findRoomClashes(
+  room: string,
+  intervals: { start: Date; end: Date }[],
+  excludeIds: ReadonlySet<string> = new Set(),
+): Promise<RoomClash[]> {
+  if (!room || intervals.length === 0) return [];
+  const minStart = new Date(Math.min(...intervals.map((i) => i.start.getTime())));
+  const maxEnd = new Date(Math.max(...intervals.map((i) => i.end.getTime())));
+  const { data, error } = await supabase
+    .from("classes")
+    .select("id, name, title_override, starts_at, ends_at")
+    .eq("location", room)
+    .eq("is_cancelled", false)
+    .lt("starts_at", maxEnd.toISOString())
+    .gt("ends_at", minStart.toISOString());
+  if (error) throw error;
+  const rows = ((data ?? []) as {
+    id: string;
+    name: string | null;
+    title_override: string | null;
+    starts_at: string;
+    ends_at: string;
+  }[]).filter((r) => !excludeIds.has(r.id));
+  const clashes: RoomClash[] = [];
+  intervals.forEach((iv, index) => {
+    for (const r of rows) {
+      const rs = new Date(r.starts_at).getTime();
+      const re = new Date(r.ends_at).getTime();
+      if (rs < iv.end.getTime() && re > iv.start.getTime()) {
+        clashes.push({
+          index,
+          title: r.title_override?.trim() || r.name?.trim() || "Another class",
+          startsAt: r.starts_at,
+          endsAt: r.ends_at,
+        });
+        break;
+      }
+    }
+  });
+  return clashes;
+}
+
+function formatClashTime(c: RoomClash): string {
+  const tz = "Africa/Johannesburg";
+  const day = new Date(c.startsAt).toLocaleDateString("en-ZA", {
+    timeZone: tz,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const t = (iso: string) =>
+    new Date(iso).toLocaleTimeString("en-ZA", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  return `${day}, ${t(c.startsAt)} to ${t(c.endsAt)}`;
+}
+
+/** Longer than this, creating a class asks: one session or several? */
+const SPLIT_PROMPT_MINUTES = 90;
 
 function formatSeriesDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-ZA", {
@@ -397,6 +467,15 @@ function SchedulePage() {
   const [guideChangeScope, setGuideChangeScope] = useState<RecurringScope | null>(null);
   /** Editing a class in a weekly series: change just this one, or this and all future ones. */
   const [editScope, setEditScope] = useState<RecurringScope>("single");
+  /** Long block on create: one session, or split into sessions of `splitMinutes`. */
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitMode, setSplitMode] = useState<"single" | "multiple">("multiple");
+  const [splitMinutes, setSplitMinutes] = useState("60");
+  const [splitSlots, setSplitSlots] = useState<
+    { start: Date; end: Date; clash: RoomClash | null; picked: boolean }[]
+  >([]);
+  const [singleClash, setSingleClash] = useState<RoomClash | null>(null);
+  const [splitChecking, setSplitChecking] = useState(false);
   /** Run of the weekly series being edited: first and last class, how many, how many left. */
   const [seriesInfo, setSeriesInfo] = useState<{
     first: string;
@@ -1127,6 +1206,45 @@ function SchedulePage() {
     const ticketPrice = parseTicketPriceZar(ticketPriceZar);
     const wantsTicket = ticketPrice != null;
 
+    // The room must be free at the new time (for a series: at every future class).
+    try {
+      let intervals = [{ start, end }];
+      let exclude = new Set<string>([editingId]);
+      if (scope === "future" && editingRecurringGroupId && editingStartsAt) {
+        const { data: seriesRows, error: seriesListErr } = await supabase
+          .from("classes")
+          .select("id, starts_at")
+          .eq("recurring_group_id", editingRecurringGroupId)
+          .gte("starts_at", editingStartsAt)
+          .eq("is_cancelled", false);
+        if (seriesListErr) throw seriesListErr;
+        const shift = start.getTime() - new Date(editingStartsAt).getTime();
+        const dur = end.getTime() - start.getTime();
+        const list = (seriesRows ?? []) as { id: string; starts_at: string }[];
+        intervals = list.map((r) => {
+          const st = new Date(new Date(r.starts_at).getTime() + shift);
+          return { start: st, end: new Date(st.getTime() + dur) };
+        });
+        exclude = new Set(list.map((r) => r.id).concat(editingId));
+      }
+      const clashes = await findRoomClashes(location, intervals, exclude);
+      if (clashes.length > 0) {
+        const c = clashes[0]!;
+        toast.error(`${location} is already in use`, {
+          description: `${c.title} is on ${formatClashTime(c)}. Pick another time or room.${
+            clashes.length > 1 ? ` (${clashes.length} clashes in total)` : ""
+          }`,
+          duration: 12_000,
+        });
+        setSaving(false);
+        return;
+      }
+    } catch (e) {
+      toast.error(supabaseErrorMessage(e, "Could not check the room"));
+      setSaving(false);
+      return;
+    }
+
     try {
       if (linkedProductId && wantsTicket) {
         await updateClassTicketProduct(supabase, linkedProductId, {
@@ -1239,9 +1357,109 @@ function SchedulePage() {
       return;
     }
 
-    setSaving(true);
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
+    const minutes = Math.round((end.getTime() - start.getTime()) / 60000);
+    if (minutes > SPLIT_PROMPT_MINUTES) {
+      setSplitMode("multiple");
+      setSplitOpen(true);
+      return;
+    }
+    await createClasses([{ start, end }]);
+  };
+
+  /** Every class that creating `slots` would add: each slot, every week it repeats. */
+  const occurrencesFor = (slots: { start: Date; end: Date }[]) => {
+    const weeks = repeatMode === "weekly" ? repeatWeekCount() : 1;
+    return slots.map((slot) =>
+      Array.from({ length: weeks }, (_, i) => {
+        const s0 = new Date(slot.start);
+        s0.setDate(s0.getDate() + i * 7);
+        return {
+          start: s0,
+          end: new Date(s0.getTime() + (slot.end.getTime() - slot.start.getTime())),
+        };
+      }),
+    );
+  };
+
+  /** Build the session list for the split prompt and mark any that clash in this room. */
+  const buildSplitSlots = async () => {
+    const start = combineDateTimeLocal(dateStr, startTime);
+    const end = combineDateTimeLocal(dateStr, endTime);
+    setSplitChecking(true);
+    try {
+      if (splitMode === "single") {
+        const clashes = await findRoomClashes(location, occurrencesFor([{ start, end }]).flat());
+        setSingleClash(clashes[0] ?? null);
+        setSplitSlots([]);
+        return;
+      }
+      const step = Math.max(15, Math.floor(Number(splitMinutes)) || 60);
+      const slots: { start: Date; end: Date }[] = [];
+      for (let t = start.getTime(); t + step * 60000 <= end.getTime(); t += step * 60000) {
+        slots.push({ start: new Date(t), end: new Date(t + step * 60000) });
+      }
+      const occ = occurrencesFor(slots);
+      const clashes = await findRoomClashes(location, occ.flat());
+      let k = 0;
+      setSplitSlots(
+        slots.map((slot, i) => {
+          const n = occ[i]!.length;
+          const mine = clashes.find((c) => c.index >= k && c.index < k + n) ?? null;
+          k += n;
+          return { ...slot, clash: mine, picked: !mine };
+        }),
+      );
+    } catch (e) {
+      toast.error(supabaseErrorMessage(e, "Could not check the room"));
+      setSplitSlots([]);
+    } finally {
+      setSplitChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    if (splitOpen) void buildSplitSlots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitOpen, splitMode, splitMinutes]);
+
+  const createClasses = async (slots: { start: Date; end: Date }[]) => {
+    if (!canManage || slots.length === 0) return;
+    setSaving(true);
+    try {
+      const clashes = await findRoomClashes(location, occurrencesFor(slots).flat());
+      if (clashes.length > 0) {
+        const c = clashes[0]!;
+        toast.error(`${location} is already in use`, {
+          description: `${c.title} is on ${formatClashTime(c)}. Pick another time or room.${
+            clashes.length > 1 ? ` (${clashes.length} clashes in total)` : ""
+          }`,
+          duration: 12_000,
+        });
+        setSaving(false);
+        return;
+      }
+    } catch (e) {
+      toast.error(supabaseErrorMessage(e, "Could not check the room"));
+      setSaving(false);
+      return;
+    }
+    setSaving(false);
+    for (const slot of slots) {
+      const ok = await createOneSlot(slot.start, slot.end, slots.length > 1);
+      if (!ok) return;
+    }
+    if (slots.length > 1) toast.success(`${slots.length} sessions created`);
+    setSplitOpen(false);
+    setDialogOpen(false);
+    setEditingId(null);
+    await load();
+    void loadStats();
+  };
+
+  const createOneSlot = async (start: Date, end: Date, quiet: boolean): Promise<boolean> => {
+    setSaving(true);
     const cap = Math.round(Number(capacity));
     // Unguided types have no guide, so never persist one even if the field held a stale pick.
     const { guide_id: gid, guide_name: gName } = selectedTypeIsGuided
@@ -1309,9 +1527,7 @@ function SchedulePage() {
         }
         const { error } = await supabase.from("classes").insert(inserts);
         if (error) throw error;
-        toast.success(
-          weeks === 1 ? "Class created" : `${weeks} weekly classes created`,
-        );
+        if (!quiet) toast.success(weeks === 1 ? "Class created" : `${weeks} weekly classes created`);
       } else {
         const ticket = await attachTicket(start, end);
         const { error } = await supabase.from("classes").insert({
@@ -1321,15 +1537,19 @@ function SchedulePage() {
           ...ticket,
         });
         if (error) throw error;
-        toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
+        if (!quiet) toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
       }
-      setDialogOpen(false);
-      setEditingId(null);
-      await load();
-      void loadStats();
+      if (!quiet) {
+        setDialogOpen(false);
+        setEditingId(null);
+        await load();
+        void loadStats();
+      }
+      return true;
     } catch (e: unknown) {
       console.error("class save failed", e);
       toast.error(`Save failed: ${supabaseErrorMessage(e, "Save failed — please try again")}`);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -2509,6 +2729,154 @@ function SchedulePage() {
               )}
             </DialogFooter>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={splitOpen} onOpenChange={(o) => !saving && setSplitOpen(o)}>
+        <DialogContent className="max-h-[92vh] max-w-md overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>How should this time be loaded?</DialogTitle>
+            <DialogDescription>
+              {startTime} to {endTime} in {location}. Load it as one long session, or split it
+              into shorter sessions.
+            </DialogDescription>
+          </DialogHeader>
+          <RadioGroup
+            value={splitMode}
+            onValueChange={(v) => setSplitMode(v as "single" | "multiple")}
+            className="gap-2.5"
+          >
+            <div className="flex items-center gap-2.5">
+              <RadioGroupItem value="single" id="split-single" />
+              <Label htmlFor="split-single" className="cursor-pointer font-normal">
+                One single session ({startTime} to {endTime})
+              </Label>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <RadioGroupItem value="multiple" id="split-multiple" />
+              <Label htmlFor="split-multiple" className="cursor-pointer font-normal">
+                Several sessions
+              </Label>
+            </div>
+          </RadioGroup>
+
+          {splitMode === "multiple" ? (
+            <div className="space-y-3">
+              <div className="grid gap-1.5">
+                <Label>Each session lasts</Label>
+                <Select value={splitMinutes} onValueChange={setSplitMinutes}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["30", "45", "60", "75", "90", "120"].map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m} minutes
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {splitChecking ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Checking {location}…
+                </p>
+              ) : splitSlots.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No full sessions of that length fit between {startTime} and {endTime}.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Tick the sessions to create. Greyed out times clash with something already in{" "}
+                    {location}
+                    {repeatMode === "weekly" ? " in at least one of the weeks" : ""}.
+                  </p>
+                  <ul className="space-y-1.5">
+                    {splitSlots.map((slot, i) => {
+                      const label = `${slot.start.toLocaleTimeString("en-ZA", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false })} to ${slot.end.toLocaleTimeString("en-ZA", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false })}`;
+                      return (
+                        <li key={slot.start.toISOString()}>
+                          <label
+                            className={cn(
+                              "flex items-start gap-3 rounded-lg border px-3 py-2 text-sm",
+                              slot.clash
+                                ? "cursor-not-allowed border-border bg-muted/40 text-muted-foreground"
+                                : "cursor-pointer border-border",
+                            )}
+                          >
+                            <Checkbox
+                              className="mt-0.5"
+                              checked={slot.picked}
+                              disabled={Boolean(slot.clash)}
+                              onCheckedChange={(c) =>
+                                setSplitSlots((prev) =>
+                                  prev.map((x, j) => (j === i ? { ...x, picked: c === true } : x)),
+                                )
+                              }
+                            />
+                            <span className="min-w-0">
+                              <span className="block font-medium">{label}</span>
+                              {slot.clash ? (
+                                <span className="block text-xs">
+                                  Not available: {slot.clash.title} ({formatClashTime(slot.clash)})
+                                </span>
+                              ) : null}
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+            </div>
+          ) : splitChecking ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking {location}…
+            </p>
+          ) : singleClash ? (
+            <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+              Not available: {singleClash.title} is in {location} on{" "}
+              {formatClashTime(singleClash)}. Choose several sessions to see which times are free.
+            </p>
+          ) : null}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setSplitOpen(false)}>
+              Back
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                saving ||
+                splitChecking ||
+                (splitMode === "single"
+                  ? Boolean(singleClash)
+                  : !splitSlots.some((x) => x.picked && !x.clash))
+              }
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={() => {
+                if (splitMode === "single") {
+                  void createClasses([
+                    {
+                      start: combineDateTimeLocal(dateStr, startTime),
+                      end: combineDateTimeLocal(dateStr, endTime),
+                    },
+                  ]);
+                } else {
+                  void createClasses(
+                    splitSlots.filter((x) => x.picked && !x.clash).map((x) => ({ start: x.start, end: x.end })),
+                  );
+                }
+              }}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {splitMode === "single"
+                ? "Create 1 session"
+                : `Create ${splitSlots.filter((x) => x.picked && !x.clash).length} sessions`}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
