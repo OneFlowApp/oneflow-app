@@ -42,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DEFAULT_STUDIO_ROOM, STUDIO_ROOMS } from "@/lib/studioRooms";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -93,7 +94,7 @@ function normalizeGuideSelectValue(id: string | null | undefined): string {
   return id;
 }
 
-const LOCATIONS = ["Studio 1", "Studio 2", "Wellzone", "Sauna"] as const;
+const LOCATIONS = STUDIO_ROOMS;
 
 type ClassRow = {
   id: string;
@@ -354,7 +355,7 @@ function SchedulePage() {
   const [creditCovered, setCreditCovered] = useState(true);
   /** "Free class": members book with no credit or payment. */
   const [isFree, setIsFree] = useState(false);
-  const [location, setLocation] = useState<string>("Studio 1");
+  const [location, setLocation] = useState<string>(DEFAULT_STUDIO_ROOM);
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
   const [startTime, setStartTime] = useState("09:00");
@@ -367,6 +368,9 @@ function SchedulePage() {
   const [linkedProductId, setLinkedProductId] = useState<string | null>(null);
   const [repeatMode, setRepeatMode] = useState<"none" | "weekly">("none");
   const [repeatWeeks, setRepeatWeeks] = useState("4");
+  /** Repeat for a number of weeks, or until a chosen end date. */
+  const [repeatEndMode, setRepeatEndMode] = useState<"weeks" | "date">("weeks");
+  const [repeatUntil, setRepeatUntil] = useState("");
   const [deleteFromDialog, setDeleteFromDialog] = useState<ClassRow | null>(null);
   const [cancelScope, setCancelScope] = useState<CancelScope>("single");
   const [cancelRangeFrom, setCancelRangeFrom] = useState("");
@@ -813,7 +817,7 @@ function SchedulePage() {
     setTitleOverride("");
     setCreditCovered(true);
     setIsFree(false);
-    setLocation("Studio 1");
+    setLocation(DEFAULT_STUDIO_ROOM);
     setGuideId(GUIDE_DIALOG_NONE);
     setDateStr(toDateInputValue(new Date()));
     setStartTime("09:00");
@@ -825,8 +829,22 @@ function SchedulePage() {
     setLinkedProductId(null);
     setRepeatMode("none");
     setRepeatWeeks("4");
+    setRepeatEndMode("weeks");
+    setRepeatUntil("");
     setEditingOriginalGuideSelectValue("none");
     setGuideChangeScope(null);
+  };
+
+  /** How many weekly classes to create: the number typed, or every week up to the end date (max 52). */
+  const repeatWeekCount = (): number => {
+    if (repeatEndMode === "date" && repeatUntil) {
+      const first = new Date(`${dateStr}T00:00:00`);
+      const last = new Date(`${repeatUntil}T00:00:00`);
+      const days = Math.floor((last.getTime() - first.getTime()) / 86400000);
+      if (!Number.isFinite(days) || days < 0) return 1;
+      return Math.max(1, Math.min(52, Math.floor(days / 7) + 1));
+    }
+    return Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
   };
 
   const weeklyPreview = useMemo(() => {
@@ -834,7 +852,7 @@ function SchedulePage() {
     const start = combineDateTimeLocal(dateStr, startTime);
     const end = combineDateTimeLocal(dateStr, endTime);
     if (end.getTime() <= start.getTime()) return [];
-    const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
+    const weeks = repeatWeekCount();
     const rows: { label: string; startsAt: string }[] = [];
     for (let i = 0; i < weeks; i++) {
       const s = new Date(start);
@@ -853,7 +871,8 @@ function SchedulePage() {
       });
     }
     return rows;
-  }, [repeatMode, dialogMode, dateStr, startTime, endTime, repeatWeeks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repeatMode, dialogMode, dateStr, startTime, endTime, repeatWeeks, repeatEndMode, repeatUntil]);
 
   const resolveGuideIdAndName = (
     selectedGuideId: string,
@@ -972,7 +991,7 @@ function SchedulePage() {
     setTitleOverride(c.title_override ?? "");
     setCreditCovered(c.credit_covered !== false);
     setIsFree(c.is_free === true);
-    setLocation(c.location || "Studio 1");
+    setLocation(c.location || DEFAULT_STUDIO_ROOM);
     const s = new Date(c.starts_at);
     const e = new Date(c.ends_at);
     setDateStr(toDateInputValue(s));
@@ -1225,7 +1244,7 @@ function SchedulePage() {
       };
 
       if (repeatMode === "weekly") {
-        const weeks = Math.max(1, Math.min(52, Math.floor(Number(repeatWeeks)) || 1));
+        const weeks = repeatWeekCount();
         const durationMs = end.getTime() - start.getTime();
         const recurringGroupId = globalThis.crypto.randomUUID();
         const inserts = [];
@@ -2049,7 +2068,12 @@ function SchedulePage() {
                 <Label>Class</Label>
                 <Select
                   value={typeSelection}
-                  onValueChange={setTypeSelection}
+                  onValueChange={(v) => {
+                    setTypeSelection(v);
+                    // Each class has a home room (Master → Class types); still changeable below.
+                    const room = v.startsWith("type:") ? typeById.get(v.slice(5))?.default_location : null;
+                    if (room) setLocation(room);
+                  }}
                   disabled={!canManage}
                 >
                   <SelectTrigger>
@@ -2301,17 +2325,53 @@ function SchedulePage() {
                 {repeatMode === "weekly" ? (
                   <div className="space-y-3">
                     <div className="grid gap-1.5">
-                      <Label htmlFor="cls-repeat-weeks">Number of weeks</Label>
-                      <Input
-                        id="cls-repeat-weeks"
-                        type="number"
-                        min={1}
-                        max={52}
-                        value={repeatWeeks}
-                        onChange={(e) => setRepeatWeeks(e.target.value)}
-                        disabled={!canManage}
-                      />
+                      <Label>Ends</Label>
+                      <RadioGroup
+                        value={repeatEndMode}
+                        onValueChange={(v) => setRepeatEndMode(v as "weeks" | "date")}
+                        className="flex gap-4"
+                      >
+                        <div className="flex items-center gap-2">
+                          <RadioGroupItem value="weeks" id="cls-repeat-by-weeks" />
+                          <Label htmlFor="cls-repeat-by-weeks" className="cursor-pointer font-normal">
+                            After a number of weeks
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <RadioGroupItem value="date" id="cls-repeat-by-date" />
+                          <Label htmlFor="cls-repeat-by-date" className="cursor-pointer font-normal">
+                            On a date
+                          </Label>
+                        </div>
+                      </RadioGroup>
                     </div>
+                    {repeatEndMode === "weeks" ? (
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="cls-repeat-weeks">Number of weeks</Label>
+                        <Input
+                          id="cls-repeat-weeks"
+                          type="number"
+                          min={1}
+                          max={52}
+                          value={repeatWeeks}
+                          onChange={(e) => setRepeatWeeks(e.target.value)}
+                          disabled={!canManage}
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="cls-repeat-until">Last class on</Label>
+                        <Input
+                          id="cls-repeat-until"
+                          type="date"
+                          min={dateStr}
+                          value={repeatUntil}
+                          onChange={(e) => setRepeatUntil(e.target.value)}
+                          disabled={!canManage}
+                        />
+                        <p className="text-xs text-muted-foreground">Up to 52 weeks.</p>
+                      </div>
+                    )}
                     {weeklyPreview.length > 0 ? (
                       <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
                         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">

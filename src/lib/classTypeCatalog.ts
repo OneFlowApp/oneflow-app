@@ -35,6 +35,8 @@ export type ClassTypeRow = {
   sort_order: number;
   /** Set when the type was deleted in Master → Class types. Kept so past classes keep their name. */
   deleted_at?: string | null;
+  /** Room the class is normally held in; fills Location when scheduling. */
+  default_location?: string | null;
 };
 
 export type ClassCatalog = {
@@ -52,7 +54,7 @@ export const EMPTY_CLASS_CATALOG: ClassCatalog = {
 
 const CATEGORY_COLUMNS = "id, slug, name, colour, sort_order, legacy_class_type";
 const TYPE_COLUMNS =
-  "id, category_id, slug, name, legacy_class_type, is_free_intro, is_guided, colour, is_active, sort_order, deleted_at";
+  "id, category_id, slug, name, legacy_class_type, is_free_intro, is_guided, colour, is_active, sort_order, deleted_at, default_location";
 
 /**
  * Fetch both levels. Returns an empty catalog on failure rather than throwing — every

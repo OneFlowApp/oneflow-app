@@ -31,6 +31,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DEFAULT_STUDIO_ROOM, STUDIO_ROOMS } from "@/lib/studioRooms";
 import { CategoryPicker } from "@/components/admin/CategoryPicker";
 import {
   AlertDialog,
@@ -59,6 +67,7 @@ type DraftType = {
   isActive: boolean;
   isFreeIntro: boolean;
   isGuided: boolean;
+  room: string;
 };
 
 const EMPTY_DRAFT: DraftType = {
@@ -68,6 +77,7 @@ const EMPTY_DRAFT: DraftType = {
   isActive: true,
   isFreeIntro: false,
   isGuided: true,
+  room: DEFAULT_STUDIO_ROOM,
 };
 
 function draftFromRow(row: ClassTypeRow): DraftType {
@@ -78,6 +88,7 @@ function draftFromRow(row: ClassTypeRow): DraftType {
     isActive: row.is_active,
     isFreeIntro: row.is_free_intro,
     isGuided: row.is_guided,
+    room: row.default_location || DEFAULT_STUDIO_ROOM,
   };
 }
 
@@ -204,6 +215,7 @@ export function ClassTypesPanel({ canManage }: Props) {
             is_active: draft.isActive,
             is_free_intro: draft.isFreeIntro,
             is_guided: draft.isGuided,
+            default_location: draft.room,
             sort_order: Math.round(sortOrder),
           })
           .eq("id", editingRow.id);
@@ -226,6 +238,7 @@ export function ClassTypesPanel({ canManage }: Props) {
           is_active: draft.isActive,
           is_free_intro: draft.isFreeIntro,
           is_guided: draft.isGuided,
+          default_location: draft.room,
           sort_order: Math.round(sortOrder),
         });
         if (error) throw error;
@@ -396,6 +409,7 @@ export function ClassTypesPanel({ canManage }: Props) {
                             ) : null}
                           </div>
                           <p className="truncate text-[11px] text-muted-foreground">
+                            {t.default_location ? `${t.default_location} · ` : ""}
                             <span className="font-mono">{t.slug}</span> · order {t.sort_order}
                           </p>
                         </div>
@@ -541,6 +555,27 @@ export function ClassTypesPanel({ canManage }: Props) {
                 canCreate={canManage}
                 disabled={saving}
               />
+            </div>
+            <div>
+              <Label>Room</Label>
+              <Select
+                value={draft.room}
+                onValueChange={(room) => setDraft((d) => ({ ...d, room }))}
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STUDIO_ROOMS.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Fills the location when you schedule this class in Week.
+              </p>
             </div>
             <div>
               <Label htmlFor="ct-order">Order within category</Label>
