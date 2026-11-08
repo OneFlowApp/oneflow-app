@@ -46,6 +46,13 @@ import { displayClassType } from "@/types/studio";
 import { useNowMs } from "@/hooks/use-now-ms";
 import { pickFocusClassId } from "@/lib/liveClassList";
 import { friendsGoingLabel, useFriendsGoing, type FriendGoing } from "@/lib/friendsGoing";
+import {
+  EMPTY_SCHEDULE_FILTERS,
+  ScheduleFilters,
+  scheduleFilterCount,
+  type ScheduleFilterState,
+  type TimeOfDay,
+} from "@/components/ScheduleFilters";
 
 function uuidOrUndefined(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
@@ -79,7 +86,41 @@ type ClassRow = {
   description?: string;
   product_id?: string | null;
   is_free?: boolean | null;
+  class_type_id?: string | null;
 };
+
+const SCHEDULE_FILTER_KEY = "oneflow.scheduleFilters.v1";
+
+function readSavedFilters(): ScheduleFilterState {
+  try {
+    const raw = window.localStorage.getItem(SCHEDULE_FILTER_KEY);
+    if (!raw) return EMPTY_SCHEDULE_FILTERS;
+    const v = JSON.parse(raw) as Partial<ScheduleFilterState>;
+    return {
+      types: Array.isArray(v.types) ? v.types.map(String) : [],
+      times: Array.isArray(v.times)
+        ? (v.times.filter((x) => x === "morning" || x === "afternoon" || x === "evening") as TimeOfDay[])
+        : [],
+      guides: Array.isArray(v.guides) ? v.guides.map(String) : [],
+    };
+  } catch {
+    return EMPTY_SCHEDULE_FILTERS;
+  }
+}
+
+function timeOfDayFor(iso: string, tz: string): TimeOfDay {
+  let hour = new Date(iso).getHours();
+  try {
+    hour = Number(
+      new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(new Date(iso)),
+    );
+  } catch {
+    /* fall back to device time */
+  }
+  if (hour < 12) return "morning";
+  if (hour < 17) return "afternoon";
+  return "evening";
+}
 
 /** Denormalized `classes.guide_name` from PostgREST (text); never guess a label when missing. */
 function guideNameFromRow(value: unknown): string | null {
@@ -363,6 +404,55 @@ export default function SchedulePage() {
   const monthLabel = formatMonthYearFromDateKey(selectedDateKey, studioTimeZone);
   const longDayLabel = formatLongDayFromDateKey(selectedDateKey, studioTimeZone);
 
+  const { catalog } = useClassCatalog();
+  const [filters, setFilters] = useState<ScheduleFilterState>(() =>
+    typeof window === "undefined" ? EMPTY_SCHEDULE_FILTERS : readSavedFilters(),
+  );
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SCHEDULE_FILTER_KEY, JSON.stringify(filters));
+    } catch {
+      /* private mode: filters just won't be remembered */
+    }
+  }, [filters]);
+
+  /** Category name (Yoga, Sculpt, Reformer, Wellzone…) used for the Type filter. */
+  const typeLabelFor = useCallback(
+    (c: ClassRow): string => {
+      const t = c.class_type_id ? catalog.types.find((x) => x.id === c.class_type_id) : undefined;
+      const cat = t ? catalog.categoryById.get(t.category_id)?.name : undefined;
+      if (cat) return cat;
+      const raw = displayClassType(c.class_type) || "Other";
+      return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, " ");
+    },
+    [catalog],
+  );
+
+  const typeOptions = useMemo(() => {
+    const set = new Set<string>(filters.types);
+    classes.forEach((c) => set.add(typeLabelFor(c)));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [classes, filters.types, typeLabelFor]);
+
+  const guideOptions = useMemo(() => {
+    const set = new Set<string>(filters.guides);
+    classes.forEach((c) => {
+      if (c.guide_name?.trim()) set.add(c.guide_name.trim());
+    });
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [classes, filters.guides]);
+
+  const allDayClasses = classes;
+  const filteredClasses = useMemo(() => {
+    if (scheduleFilterCount(filters) === 0) return allDayClasses;
+    return allDayClasses.filter(
+      (c) =>
+        (filters.types.length === 0 || filters.types.includes(typeLabelFor(c))) &&
+        (filters.times.length === 0 || filters.times.includes(timeOfDayFor(c.starts_at, studioTimeZone))) &&
+        (filters.guides.length === 0 || (c.guide_name != null && filters.guides.includes(c.guide_name.trim()))),
+    );
+  }, [allDayClasses, filters, typeLabelFor, studioTimeZone]);
+
   const uid = user?.id;
   const classIdsForFriends = useMemo(() => classes.map((c) => c.id), [classes]);
   const friendsGoing = useFriendsGoing(classIdsForFriends, uid);
@@ -370,8 +460,8 @@ export default function SchedulePage() {
   const isCurrentWeek = weekSundayKey <= weekSundayDateKey(todayKey, studioTimeZone);
   const selectedDayIsPast = isPastScheduleDay(selectedDateKey, studioTimeZone);
   const isToday = selectedDateKey === todayKey;
-  const timeLineIndex = isToday ? currentTimeLineInsertIndex(classes, nowMs) : -1;
-  const focusClassId = isToday ? pickFocusClassId(classes, nowMs) : null;
+  const timeLineIndex = isToday ? currentTimeLineInsertIndex(filteredClasses, nowMs) : -1;
+  const focusClassId = isToday ? pickFocusClassId(filteredClasses, nowMs) : null;
 
   useEffect(() => {
     if (!isToday || loading || classes.length === 0) return;
@@ -520,15 +610,36 @@ export default function SchedulePage() {
                   : "schedule-content-animate"),
           )}
         >
+          {!loading && allDayClasses.length > 0 ? (
+            <ScheduleFilters
+              value={filters}
+              onChange={setFilters}
+              typeOptions={typeOptions}
+              guideOptions={guideOptions}
+              shown={filteredClasses.length}
+              total={allDayClasses.length}
+            />
+          ) : null}
           {loading ? (
             <ScheduleRowsSkeleton />
-          ) : classes.length === 0 ? (
+          ) : allDayClasses.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
               <p>No classes scheduled for this day.</p>
             </div>
+          ) : filteredClasses.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+              <p>No classes match your filters on this day.</p>
+              <button
+                type="button"
+                onClick={() => setFilters(EMPTY_SCHEDULE_FILTERS)}
+                className="mt-2 text-xs font-semibold text-[#4a6b3c] underline-offset-2 hover:underline"
+              >
+                Clear filters
+              </button>
+            </div>
           ) : (
             <div ref={classListRef} className="space-y-3">
-              {classes.map((c, idx) => {
+              {filteredClasses.map((c, idx) => {
                 const classIsPast =
                   selectedDayIsPast || isPastScheduleClass(c.starts_at, nowMs);
                 const overlapBooking = findOverlappingBooking(c, bookedIntervals, c.id);
@@ -558,7 +669,7 @@ export default function SchedulePage() {
                   </div>
                 );
               })}
-              {timeLineIndex === classes.length ? (
+              {timeLineIndex === filteredClasses.length ? (
                 <div data-schedule-now-line>
                   <CurrentTimeLine />
                 </div>
