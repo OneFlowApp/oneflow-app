@@ -4,7 +4,7 @@ import { Bell } from "lucide-react";
 import { getUser, supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
-/** Bell linking to Messages. Turns sage with a red count when there are unread studio messages. */
+/** Bell linking to Messages. Turns sage with a red count when there are unread messages in the inbox. */
 export function NotificationBell({ className }: { className?: string }) {
   const [unread, setUnread] = useState(0);
 
@@ -13,12 +13,13 @@ export function NotificationBell({ className }: { className?: string }) {
     const load = async () => {
       const user = await getUser();
       if (!user || cancelled) return;
+      // Count unread messages in the inbox itself (the source of truth for Messages), so the bell
+      // lights up even when a separate notification row wasn't written.
       const { count } = await supabase
-        .from("notifications")
+        .from("studio_messages")
         .select("id", { count: "exact", head: true })
-        .eq("profile_id", user.id)
-        .eq("is_read", false)
-        .eq("type", "message");
+        .eq("to_profile_id", user.id)
+        .eq("is_read", false);
       if (!cancelled) setUnread(typeof count === "number" ? count : 0);
     };
     void load();
