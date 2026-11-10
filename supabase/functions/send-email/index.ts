@@ -14,7 +14,8 @@ type TemplateName =
   | "package_assigned"
   | "marketing"
   | "user_invite"
-  | "waitlist_promoted";
+  | "waitlist_promoted"
+  | "class_changed";
 
 type RequestPayload = {
   to?: string;
@@ -278,6 +279,25 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: shower towel only. No workout clothes needed.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
         <p style="font-size:14px;color:#888;margin:24px 0 0;">See you soon — One Flow Team</p>
+      `,
+    };
+  }
+
+  if (template === "class_changed") {
+    const before = formatDateTime(data.old_starts_at);
+    const after = formatDateTime(data.new_starts_at);
+    const oldName = String(data.old_class_name ?? className);
+    const newName = String(data.new_class_name ?? className);
+    return {
+      subject: `Change to your class: ${newName}`,
+      content: `
+        <h2 style="font-size:22px;font-weight:600;color:#a3b693;margin:0 0 16px;">Your class has changed</h2>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">You're still booked in. Here's what's new:</p>
+        ${oldName !== newName ? detailRow("Class", `${newName} (was ${oldName})`) : detailRow("Class", newName)}
+        ${detailRow("Date", after.date)}
+        ${before.time !== after.time || before.date !== after.date ? detailRow("Time", `${after.time} (was ${before.date !== after.date ? `${before.date}, ` : ""}${before.time})`) : detailRow("Time", after.time)}
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:16px 0 0;">If the change doesn't work for you, please reply to this email or contact the studio and we'll sort it out.</p>
+        <p style="font-size:14px;color:#888;margin:24px 0 0;">One Flow Team</p>
       `,
     };
   }

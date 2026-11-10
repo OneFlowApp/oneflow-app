@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Calendar, Coffee, MapPin, QrCode } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
+import { NotificationBell } from "@/components/NotificationBell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { movementChallengeTotalDays } from "@/lib/movementChallenge";
@@ -123,8 +124,9 @@ function HomePage() {
 
   return (
     <AppShell>
-      <main className="flex-1 space-y-5 px-5 pt-6">
-        <h1 className="text-center font-display text-[44px] font-bold leading-tight tracking-tight">
+      <main className="relative flex-1 space-y-5 px-5 pt-6">
+        <NotificationBell className="absolute right-5 top-3" />
+        <h1 className="px-10 text-center font-display text-[44px] font-bold leading-tight tracking-tight">
           {welcomeTitle}
         </h1>
 

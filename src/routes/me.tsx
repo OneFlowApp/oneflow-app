@@ -199,18 +199,7 @@ function MePage() {
     <AppShell>
       <div className="flex items-center justify-between px-5 pt-3">
         <h1 className="font-display text-lg font-semibold text-muted-foreground">Profile</h1>
-        <Link
-          to="/messages"
-          aria-label="Messages"
-          className="relative z-30 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card"
-        >
-          <Bell className="h-4 w-4" />
-          {unreadCount > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </span>
-          ) : null}
-        </Link>
+
       </div>
 
       <main className="flex flex-1 flex-col px-5 pt-3 pb-6">
