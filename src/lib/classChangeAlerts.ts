@@ -39,16 +39,33 @@ export async function snapshotClasses(ids: string[]): Promise<Map<string, ClassS
   return out;
 }
 
+export type ClassChangeItem = {
+  before: ClassSnapshot;
+  after: ClassSnapshot;
+  people: string[];
+  message: string;
+};
+
+export type ClassChangePlan = { items: ClassChangeItem[]; people: number };
+
+function describe(a: ClassSnapshot, b: ClassSnapshot): string {
+  const parts: string[] = [];
+  if (a.title !== b.title) parts.push(`${b.title} is now ${a.title}`);
+  if (a.starts_at !== b.starts_at) parts.push(`it's now on ${when(a.starts_at)} (was ${when(b.starts_at)})`);
+  if (a.ends_at !== b.ends_at && a.starts_at === b.starts_at) {
+    const mins = Math.round((new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime()) / 60000);
+    parts.push(`it now runs for ${mins} minutes`);
+  }
+  if (parts.length === 0) parts.push("the class details have been updated");
+  return `Heads up: ${parts.join(", and ")}. You're still booked in. If the change doesn't work for you, please contact the studio.`;
+}
+
 /**
- * After a class (or series) is edited in Master: tell everyone booked into an upcoming class
- * whose time, length or class changed. In-app message (Messages + bell) and an email.
- * Returns how many members were told.
+ * After a class (or series) is edited in Master: which upcoming classes changed time, length or
+ * class, and who is booked into them. Nothing is sent yet.
  */
-export async function alertBookedMembersOfChanges(
-  before: Map<string, ClassSnapshot>,
-  fromProfileId: string | null,
-): Promise<number> {
-  if (before.size === 0) return 0;
+export async function planClassChangeAlerts(before: Map<string, ClassSnapshot>): Promise<ClassChangePlan> {
+  if (before.size === 0) return { items: [], people: 0 };
   const after = await snapshotClasses([...before.keys()]);
   const now = Date.now();
   const changed = [...before.values()]
@@ -62,7 +79,7 @@ export async function alertBookedMembersOfChanges(
           x.a!.class_type_id !== x.b.class_type_id ||
           x.a!.title !== x.b.title),
     );
-  if (changed.length === 0) return 0;
+  if (changed.length === 0) return { items: [], people: 0 };
 
   const { data: bookings, error } = await supabase
     .from("bookings")
@@ -74,7 +91,8 @@ export async function alertBookedMembersOfChanges(
     .neq("status", "cancelled");
   if (error) throw error;
 
-  const told = new Set<string>();
+  const everyone = new Set<string>();
+  const items: ClassChangeItem[] = [];
   for (const { a, b } of changed) {
     const people = [
       ...new Set(
@@ -84,25 +102,24 @@ export async function alertBookedMembersOfChanges(
       ),
     ];
     if (people.length === 0) continue;
+    people.forEach((p) => everyone.add(p));
+    items.push({ before: b, after: a, people, message: describe(a, b) });
+  }
+  return { items, people: everyone.size };
+}
 
-    const parts: string[] = [];
-    if (a.title !== b.title) parts.push(`${b.title} is now ${a.title}`);
-    if (a.starts_at !== b.starts_at) parts.push(`it's now on ${when(a.starts_at)} (was ${when(b.starts_at)})`);
-    if (a.ends_at !== b.ends_at && a.starts_at === b.starts_at) {
-      const mins = Math.round((new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime()) / 60000);
-      parts.push(`it now runs for ${mins} minutes`);
-    }
-    if (parts.length === 0) parts.push("the class details have been updated");
-
+/** Send the in-app message and email for each changed class. Returns how many members were told. */
+export async function sendClassChangeAlerts(plan: ClassChangePlan, fromProfileId: string | null): Promise<number> {
+  const told = new Set<string>();
+  for (const it of plan.items) {
     await sendInAppMessagesToMembers({
       fromProfileId,
-      profileIds: people,
-      subject: `Change to your class: ${a.title}`,
-      body: `Heads up: ${parts.join(", and ")}. You're still booked in. If the change doesn't work for you, please contact the studio.`,
+      profileIds: it.people,
+      subject: `Change to your class: ${it.after.title}`,
+      body: it.message,
       messageType: "direct",
     });
-
-    for (const pid of people) {
+    for (const pid of it.people) {
       told.add(pid);
       void supabase.functions
         .invoke("send-email", {
@@ -110,11 +127,11 @@ export async function alertBookedMembersOfChanges(
             template: "class_changed",
             to_profile_id: pid,
             data: {
-              class_name: a.title,
-              old_class_name: b.title,
-              new_class_name: a.title,
-              old_starts_at: b.starts_at,
-              new_starts_at: a.starts_at,
+              class_name: it.after.title,
+              old_class_name: it.before.title,
+              new_class_name: it.after.title,
+              old_starts_at: it.before.starts_at,
+              new_starts_at: it.after.starts_at,
             },
           },
         })
