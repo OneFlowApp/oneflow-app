@@ -21,11 +21,26 @@ export type HomeSpotlight = {
   is_live: boolean;
   sort_order: number;
   closed_at: string | null;
+  /** Optional: only on Home from this date (YYYY-MM-DD, studio time). */
+  show_from: string | null;
+  /** Optional: last day on Home (YYYY-MM-DD, studio time). */
+  show_until: string | null;
   created_at: string;
 };
 
+/** Today's date in studio time, YYYY-MM-DD. */
+export function studioToday(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Johannesburg" }).format(new Date());
+}
+
+/** Whether a live spotlight's dates include today. */
+export function spotlightShowingToday(s: Pick<HomeSpotlight, "show_from" | "show_until">): boolean {
+  const today = studioToday();
+  return (!s.show_from || s.show_from <= today) && (!s.show_until || s.show_until >= today);
+}
+
 export const SPOTLIGHT_COLUMNS =
-  "id, kind, badge, title, subtitle, body, event_date, price_label, image_url, link_url, link_label, placement, is_live, sort_order, closed_at, created_at";
+  "id, kind, badge, title, subtitle, body, event_date, price_label, image_url, link_url, link_label, placement, is_live, sort_order, closed_at, show_from, show_until, created_at";
 
 export const SPOTLIGHT_KIND_LABEL: Record<SpotlightKind, string> = {
   promo: "Offer or announcement",
@@ -43,7 +58,8 @@ export async function fetchLiveSpotlights(): Promise<HomeSpotlight[]> {
     console.warn("home spotlights", error.message);
     return [];
   }
-  return (data ?? []) as HomeSpotlight[];
+  // Staff can read every spotlight, so dates are checked here too.
+  return ((data ?? []) as HomeSpotlight[]).filter(spotlightShowingToday);
 }
 
 /** An offer row drawn with the existing spotlight card (image, badge, title, subtitle, link). */

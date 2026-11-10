@@ -38,6 +38,7 @@ import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { uploadChallengeImage } from "@/lib/uploadChallengeImage";
 import { cn } from "@/lib/utils";
 import {
+  spotlightShowingToday,
   eventConfigFor,
   promoConfigFor,
   SPOTLIGHT_COLUMNS,
@@ -62,7 +63,21 @@ const EMPTY: Draft = {
   link_url: "/schedule",
   link_label: "Tap to view →",
   placement: "bottom",
+  show_from: "",
+  show_until: "",
 };
+
+function shortDate(ymd: string): string {
+  const d = new Date(`${ymd}T12:00:00`);
+  return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
+function datesLabel(r: Pick<HomeSpotlight, "show_from" | "show_until">): string {
+  if (r.show_from && r.show_until) return `${shortDate(r.show_from)} to ${shortDate(r.show_until)}`;
+  if (r.show_from) return `from ${shortDate(r.show_from)}`;
+  if (r.show_until) return `until ${shortDate(r.show_until)}`;
+  return "";
+}
 
 const PLACEMENT_LABEL: Record<SpotlightPlacement, string> = {
   top: "Top of Home",
@@ -127,6 +142,8 @@ export function HomeSpotlightsManager({ challengeConfig }: { challengeConfig: Mo
       link_url: r.link_url ?? "",
       link_label: r.link_label ?? "",
       placement: r.placement,
+      show_from: r.show_from ?? "",
+      show_until: r.show_until ?? "",
     });
   };
 
@@ -136,6 +153,10 @@ export function HomeSpotlightsManager({ challengeConfig }: { challengeConfig: Mo
     if (!draft) return;
     if (draft.kind !== "challenge" && !draft.title.trim()) {
       toast.error("Give the spotlight a title");
+      return;
+    }
+    if (draft.show_from && draft.show_until && draft.show_until < draft.show_from) {
+      toast.error("The last day can't be before the first day");
       return;
     }
     const link = (draft.link_url ?? "").trim();
@@ -243,7 +264,11 @@ export function HomeSpotlightsManager({ challengeConfig }: { challengeConfig: Mo
               <li key={r.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{titleOf(r) || "Untitled"}</p>
-                  <p className="text-xs text-muted-foreground">{SPOTLIGHT_KIND_LABEL[r.kind]}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {SPOTLIGHT_KIND_LABEL[r.kind]}
+                    {datesLabel(r) ? ` · ${datesLabel(r)}` : ""}
+                    {!spotlightShowingToday(r) ? " · not showing today" : ""}
+                  </p>
                 </div>
                 <Button size="icon" variant="ghost" className="h-8 w-8" disabled={i === 0} onClick={() => void move(list, i, -1)} aria-label="Move up">
                   <ArrowUp className="h-4 w-4" />
@@ -376,6 +401,26 @@ export function HomeSpotlightsManager({ challengeConfig }: { challengeConfig: Mo
                   </Select>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>Show from (optional)</Label>
+                  <Input type="date" value={draft.show_from ?? ""} onChange={(e) => set("show_from", e.target.value)} />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Last day (optional)</Label>
+                  <Input
+                    type="date"
+                    min={draft.show_from || undefined}
+                    value={draft.show_until ?? ""}
+                    onChange={(e) => set("show_until", e.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="-mt-1 text-xs text-muted-foreground">
+                Leave both empty to show it until you close it. With dates, it appears and disappears on
+                its own.
+              </p>
 
               {draft.kind === "challenge" ? (
                 <p className="rounded-lg bg-muted/40 px-3 py-2 text-sm text-muted-foreground">

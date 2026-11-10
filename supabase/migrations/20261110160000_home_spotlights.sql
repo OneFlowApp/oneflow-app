@@ -16,16 +16,27 @@ create table if not exists public.home_spotlights (
   is_live boolean not null default true,
   sort_order integer not null default 0,
   closed_at timestamptz,
+  -- Optional dates (studio time): only shown on Home from show_from, up to and including show_until.
+  show_from date,
+  show_until date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.home_spotlights add column if not exists show_from date;
+alter table public.home_spotlights add column if not exists show_until date;
 
 alter table public.home_spotlights enable row level security;
 
 drop policy if exists home_spotlights_read on public.home_spotlights;
 create policy home_spotlights_read on public.home_spotlights
   for select to authenticated
-  using (is_live or public.has_any_role(array['director', 'management', 'marketing']));
+  using (
+    (is_live
+      and (show_from is null or show_from <= (now() at time zone 'Africa/Johannesburg')::date)
+      and (show_until is null or show_until >= (now() at time zone 'Africa/Johannesburg')::date))
+    or public.has_any_role(array['director', 'management', 'marketing'])
+  );
 
 drop policy if exists home_spotlights_write on public.home_spotlights;
 create policy home_spotlights_write on public.home_spotlights
@@ -64,4 +75,4 @@ exception when others then
   raise notice 'Could not copy the current spotlight settings: %', sqlerrm;
 end $$;
 
-select kind, title, placement, is_live from public.home_spotlights order by placement, sort_order;
+select kind, title, placement, is_live, show_from, show_until from public.home_spotlights order by placement, sort_order;
