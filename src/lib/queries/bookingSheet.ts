@@ -160,7 +160,8 @@ export async function fetchBookingSheetData(
     userEmail: userEmail ?? null,
     userRole,
     flowPoints,
-    credits,
+    // Free classes never use a pack credit, so members aren't offered one.
+    credits: skipPayment ? [] : credits,
     acceptedFriends,
     hireAddons: hires,
     waitlistEntry: waitlistMine,
