@@ -459,6 +459,21 @@ serve(async (req) => {
     });
   }
 
+  // Continuous Flow: not available for 12 months after a gap of more than a day.
+  if (packRow.is_continuous === true) {
+    const { data: cf } = await supabase.rpc("continuous_flow_status", { p_profile_id: String(profile_id) });
+    const status: any = Array.isArray(cf) ? cf[0] : cf;
+    if (status && status.eligible === false) {
+      const until = status.blocked_until
+        ? new Date(status.blocked_until).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Johannesburg" })
+        : "later";
+      return new Response(
+        JSON.stringify({ error: `Continuous Flow is available to you again from ${until}. Please choose another pack.` }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+  }
+
   const listPriceZar = Number(packRow.price_zar);
   const memberPriceZar = Number(packRow.member_price_zar ?? 0);
   let memberPriceApplied = false;

@@ -65,6 +65,7 @@ type ProductRow = {
   mat_included: boolean;
   shower_towel_included: boolean;
   offer_with_product_ids: string[];
+  is_continuous?: boolean;
 };
 
 type AccessGroup = {
@@ -333,6 +334,8 @@ function ProductsPage() {
   const [memberPriceZar, setMemberPriceZar] = useState("");
   const [matIncluded, setMatIncluded] = useState(false);
   const [showerTowelIncluded, setShowerTowelIncluded] = useState(false);
+  /** Continuous Flow: lost for 12 months after a renewal gap of more than a day. */
+  const [isContinuous, setIsContinuous] = useState(false);
   /** Products whose purchase offers this product as a monthly add-on. Empty = not an add-on. */
   const [offerProductIds, setOfferProductIds] = useState<string[]>([]);
   const [allowanceItems, setAllowanceItems] = useState<AllowanceItem[]>(() => [newAllowanceItem()]);
@@ -347,7 +350,7 @@ function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids",
+        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids, is_continuous",
       )
       .order("category", { ascending: true })
       .order("name", { ascending: true });
@@ -379,6 +382,7 @@ function ProductsPage() {
       member_price_zar: nullableNumber(raw.member_price_zar),
       mat_included: Boolean(raw.mat_included),
       shower_towel_included: Boolean(raw.shower_towel_included),
+      is_continuous: raw.is_continuous === true,
       offer_with_product_ids: Array.isArray(raw.offer_with_product_ids)
         ? (raw.offer_with_product_ids as unknown[]).map(String)
         : [],
@@ -531,6 +535,7 @@ function ProductsPage() {
     setMemberPriceZar(d.memberPriceZar);
     setMatIncluded(d.matIncluded);
     setShowerTowelIncluded(d.showerTowelIncluded);
+    setIsContinuous(false);
     setOfferProductIds([]);
     setAllowanceItems([newAllowanceItem()]);
   }, []);
@@ -548,6 +553,7 @@ function ProductsPage() {
     setMemberPriceZar(p.member_price_zar == null ? "" : String(p.member_price_zar));
     setMatIncluded(p.mat_included);
     setShowerTowelIncluded(p.shower_towel_included);
+    setIsContinuous(p.is_continuous === true);
     setOfferProductIds(p.offer_with_product_ids ?? []);
   }, []);
 
@@ -764,6 +770,7 @@ function ProductsPage() {
       member_price_zar: memberPrice,
       mat_included: matIncluded,
       shower_towel_included: showerTowelIncluded,
+      is_continuous: isContinuous,
       offer_with_product_ids: offerProductIds,
     };
 
@@ -1270,6 +1277,26 @@ function ProductsPage() {
                 />
               </div>
             )}
+
+            <label
+              htmlFor="p-continuous"
+              className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/15 px-3 py-2.5"
+            >
+              <Checkbox
+                id="p-continuous"
+                className="mt-0.5"
+                checked={isContinuous}
+                onCheckedChange={(c) => setIsContinuous(c === true)}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">Continuous Flow</span>
+                <span className="block text-xs text-muted-foreground">
+                  Members keep this price only by renewing with no gap of more than a day. After a
+                  longer gap it&apos;s greyed out for them for 12 months. Renewals start when the
+                  current one ends, and the app reminds them a day before.
+                </span>
+              </span>
+            </label>
 
             <div className="rounded-lg border border-border bg-muted/15 px-3 py-2.5">
               <Label className="text-foreground">Offer as a monthly add-on</Label>

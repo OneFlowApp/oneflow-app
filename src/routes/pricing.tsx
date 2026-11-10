@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -40,8 +40,10 @@ export const Route = createFileRoute("/pricing")({
   validateSearch: (raw: Record<string, unknown>) => {
     const category = typeof raw.category === "string" ? raw.category.trim().toLowerCase() : "";
     const allowed = new Set<string>(LINKABLE_PRICING_CATEGORIES);
+    const renew = typeof raw.renew === "string" && /^[0-9a-f-]{36}$/i.test(raw.renew) ? raw.renew : undefined;
     return {
       category: allowed.has(category) ? (category as LinkablePricingCategory) : undefined,
+      renew,
     };
   },
   component: PricingPage,
@@ -77,6 +79,7 @@ type ProductRow = {
   access_scope: string | null;
   upgrade_price_zar: number | null;
   member_price_zar: number | null;
+  is_continuous?: boolean | null;
   mat_included: boolean | null;
   shower_towel_included: boolean | null;
 };
@@ -159,6 +162,22 @@ function PricingPage() {
   const [pricingSections, setPricingSections] = useState<PricingSectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  /** Continuous Flow: when it's greyed out for this member (12 months after a gap). */
+  const [cfBlockedUntil, setCfBlockedUntil] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const u = await getUser();
+      if (!u) return;
+      const { data } = await supabase.rpc("continuous_flow_status");
+      const row = (Array.isArray(data) ? data[0] : data) as { eligible?: boolean; blocked_until?: string | null } | null;
+      if (!cancelled) setCfBlockedUntil(row && row.eligible === false ? (row.blocked_until ?? "") : null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [addonOffers, setAddonOffers] = useState<AddonOffer[]>([]);
   /** The pack waiting on the "add to your purchase?" question, with the add-ons offered. */
   const [upsell, setUpsell] = useState<{ packId: string; offers: AddonOffer[] } | null>(null);
@@ -239,7 +258,7 @@ function PricingPage() {
         supabase
           .from("products")
           .select(
-            "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included",
+            "id, name, price_zar, credit_count, description, is_active, is_staff_only, sort_order, category, allowed_class_types, validity_days, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, is_continuous",
           )
           .eq("is_active", true)
           .eq("is_addon", false)
@@ -460,6 +479,17 @@ function PricingPage() {
     window.location.href = redirect;
   };
 
+  // From the renewal pop-up on Home: start paying for that pack straight away, once.
+  const renewStarted = useRef(false);
+  useEffect(() => {
+    const id = search.renew;
+    if (!id || renewStarted.current || loading) return;
+    if (!products.some((x) => x.id === id)) return;
+    renewStarted.current = true;
+    void buyNow(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.renew, loading, products]);
+
   return (
     <AppShell>
       <div className="flex flex-1 flex-col bg-gradient-to-b from-[#f4f7f0] to-background dark:from-background dark:to-background">
@@ -568,6 +598,7 @@ function PricingPage() {
                                 className={cn(
                                   "rounded-xl border border-[#c5d4b8]/60 bg-card p-4 shadow-sm",
                                   "dark:border-border",
+                                  p.is_continuous && cfBlockedUntil !== null && "opacity-55 grayscale",
                                 )}
                               >
                                 <div className="flex items-start justify-between gap-3">
@@ -663,9 +694,18 @@ function PricingPage() {
                                   </div>
                                 ) : null}
                                 <div className="mt-4 space-y-2">
+                                  {p.is_continuous && cfBlockedUntil !== null ? (
+                                    <p className="rounded-lg bg-muted/60 px-3 py-2 text-center text-xs text-muted-foreground">
+                                      Continuous Flow pauses for 12 months after a break of more
+                                      than a day.
+                                      {cfBlockedUntil
+                                        ? ` Available to you again from ${new Date(cfBlockedUntil).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })}.`
+                                        : ""}
+                                    </p>
+                                  ) : null}
                                   <button
                                     type="button"
-                                    disabled={buyingId !== null}
+                                    disabled={buyingId !== null || (p.is_continuous === true && cfBlockedUntil !== null)}
                                     onClick={() => void buyNow(p.id)}
                                     className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#a3b693] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-opacity hover:opacity-95 disabled:opacity-60 dark:bg-primary dark:text-primary-foreground"
                                   >
