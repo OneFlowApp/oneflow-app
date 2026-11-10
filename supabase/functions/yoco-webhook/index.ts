@@ -309,7 +309,7 @@ serve(async (req) => {
 
   const { data: pack, error: packErr } = await supabase
     .from("products")
-    .select("id, name, category, allowed_class_types, credit_count, validity_days, access_scope, mat_included, shower_towel_included, offer_with_product_ids, product_allowances(label, class_types, credits, sort_order)")
+    .select("id, name, category, allowed_class_types, credit_count, validity_days, access_scope, mat_included, shower_towel_included, offer_with_product_ids, is_continuous, product_allowances(label, class_types, credits, sort_order)")
     .eq("id", packId)
     .maybeSingle();
   if (packErr) {
@@ -329,6 +329,26 @@ serve(async (req) => {
       ? buildAllowanceRows(product, profileId, paymentId, now)
       : buildCreditRows(product, profileId, paymentId, now);
   const mainRowCount = rows.length;
+
+  // Continuous Flow renewals start when the current one ends, so no days are lost.
+  if ((product as any).is_continuous === true && Number(product.validity_days) > 0) {
+    const { data: cfProducts } = await supabase.from("products").select("id").eq("is_continuous", true);
+    const cfIds = ((cfProducts ?? []) as any[]).map((p) => p.id);
+    const { data: current } = await supabase
+      .from("user_credits")
+      .select("expires_at")
+      .eq("profile_id", profileId)
+      .in("product_id", cfIds.length ? cfIds : [product.id])
+      .is("refunded_at", null)
+      .gt("expires_at", now.toISOString())
+      .order("expires_at", { ascending: false })
+      .limit(1);
+    const currentEnd = (current as any[] | null)?.[0]?.expires_at;
+    if (currentEnd) {
+      const newEnd = new Date(new Date(currentEnd).getTime() + Number(product.validity_days) * 86400000).toISOString();
+      for (let i = 0; i < mainRowCount; i++) rows[i].expires_at = newEnd;
+    }
+  }
 
   // Monthly add-ons bought in the same payment.
   const addonIds = String(metadata.addon_ids ?? "").split(",").map((x) => x.trim()).filter(Boolean);

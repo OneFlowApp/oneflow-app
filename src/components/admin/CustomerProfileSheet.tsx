@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DeleteMemberSection } from "@/components/admin/DeleteMemberSection";
 import { ConversationThread } from "@/components/ConversationThread";
+import { ContinuousFlowSection } from "@/components/admin/ContinuousFlowSection";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -1137,6 +1138,11 @@ export function CustomerProfileSheet({
               </section>
 
               <MemberFeesSection profileId={profile.id} canWaive={canManage} />
+
+              <ContinuousFlowSection
+                profileId={profile.id}
+                canRestore={["director", "management"].includes(String(viewerRole ?? ""))}
+              />
 
               <section className="border-t border-border pt-6">
                 <h4 className="mb-3 font-display text-lg font-semibold">Credit transaction history</h4>
