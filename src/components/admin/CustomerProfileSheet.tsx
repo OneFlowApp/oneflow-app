@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DeleteMemberSection } from "@/components/admin/DeleteMemberSection";
-import { SendMemberMessageSection } from "@/components/admin/SendMemberMessageSection";
+import { ConversationThread } from "@/components/ConversationThread";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -1122,7 +1122,19 @@ export function CustomerProfileSheet({
                 )}
               </section>
 
-              <SendMemberMessageSection profileId={profile.id} memberName={fullName} />
+              <section className="border-t border-border pt-6">
+                <h4 className="mb-1 font-display text-lg font-semibold">Messages</h4>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Every message between the studio and {fullName}, kept in one conversation. Your replies
+                  arrive in their Messages and light up the bell on their Home screen.
+                </p>
+                <ConversationThread
+                  profileId={profile.id}
+                  mode="studio"
+                  memberName={fullName}
+                  className="h-[420px]"
+                />
+              </section>
 
               <MemberFeesSection profileId={profile.id} canWaive={canManage} />
 
