@@ -39,6 +39,9 @@ const SETTING_KEYS = [
   "checkin_open_minutes_before",
   "flow_points_per_class",
   "flow_points_conversion_rate",
+  "tier_silver_classes",
+  "tier_gold_classes",
+  "tier_platinum_classes",
 ] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -56,6 +59,9 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   checkin_open_minutes_before: "120",
   flow_points_per_class: "10",
   flow_points_conversion_rate: "10",
+  tier_silver_classes: "25",
+  tier_gold_classes: "75",
+  tier_platinum_classes: "150",
 };
 
 function csvEscape(s: string): string {
@@ -284,6 +290,26 @@ function SettingsPage() {
           {
             key: "flow_points_conversion_rate" as SettingKey,
             label: "Rand discount per 100 points at checkout (e.g. 10 = R10 off per 100 pts)",
+            type: "number",
+          },
+        ],
+      },
+      {
+        section: "Membership tiers (classes attended in the last 12 months)",
+        items: [
+          {
+            key: "tier_silver_classes" as SettingKey,
+            label: "Silver card from (classes)",
+            type: "number",
+          },
+          {
+            key: "tier_gold_classes" as SettingKey,
+            label: "Gold card from (classes)",
+            type: "number",
+          },
+          {
+            key: "tier_platinum_classes" as SettingKey,
+            label: "Platinum card from (classes)",
             type: "number",
           },
         ],

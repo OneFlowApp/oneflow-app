@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/admin/PageHeader";
 import { QRScanner } from "@/components/admin/QRScanner";
 import { CheckInClassAccordion } from "@/components/admin/CheckInClassAccordion";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
+import { GreenPointVisitDialog } from "@/components/admin/GreenPointVisitDialog";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -78,6 +79,7 @@ function CheckInPage() {
   const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [greenPointOpen, setGreenPointOpen] = useState(false);
   const [checkinOpenMinutes, setCheckinOpenMinutes] = useState(DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE);
   const qrDedupeRef = useRef<string | null>(null);
   const qrDedupeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -462,17 +464,23 @@ function CheckInPage() {
       <PageHeader
         title="Check-In"
         actions={
-          <Button
-            type="button"
-            size="sm"
-            className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-            onClick={() => setWalkInOpen(true)}
-          >
-            <UserPlus className="h-4 w-4 shrink-0" aria-hidden />
-            Walk-in
-          </Button>
+          <div className="flex gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => setGreenPointOpen(true)}>
+              Green Point visit
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={() => setWalkInOpen(true)}
+            >
+              <UserPlus className="h-4 w-4 shrink-0" aria-hidden />
+              Walk-in
+            </Button>
+          </div>
         }
       />
+      <GreenPointVisitDialog open={greenPointOpen} onOpenChange={setGreenPointOpen} />
 
       <WalkInSheet
         open={walkInOpen}
