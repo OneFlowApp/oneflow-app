@@ -4,6 +4,7 @@ import { ImageIcon, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { HomeSpotlightCard } from "@/components/HomeSpotlightCard";
+import { HomeSpotlightsManager } from "@/components/admin/HomeSpotlightsManager";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -83,7 +84,8 @@ function AdminChallengePage() {
     setEventCard((prev) => ({ ...prev, [key]: value }));
   };
 
-  const isPromoMode = config.home_card_mode === "event" || config.home_card_mode === "offer";
+  // Offers and events now live in the spotlight library; this page only saves the challenge.
+  const isPromoMode = false;
 
   const save = async () => {
     if (isPromoMode && !config.promo_title.trim()) {
@@ -178,8 +180,8 @@ function AdminChallengePage() {
   return (
     <div>
       <PageHeader
-        title="Home spotlight & event card"
-        description="Spotlight and event cards appear at the bottom of the member home page — below bookings and schedule actions."
+        title="Home spotlight"
+        description="Spotlights at the top or bottom of the member Home page, and the Movement challenge."
         actions={
           <Button
             type="button"
@@ -188,124 +190,14 @@ function AdminChallengePage() {
             className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save changes
+            Save challenge
           </Button>
         }
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
-          <section className="rounded-2xl border border-border bg-card p-5">
-            <h3 className="mb-4 font-display text-lg font-semibold">Home card</h3>
-            <div className="grid gap-4">
-              <div className="grid gap-1.5">
-                <Label>What to show</Label>
-                <Select
-                  value={config.home_card_mode}
-                  onValueChange={(v) => update("home_card_mode", v as HomeSpotlightCardMode)}
-                  disabled={loading}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="challenge">Movement challenge</SelectItem>
-                    <SelectItem value="event">Event</SelectItem>
-                    <SelectItem value="offer">Special offer</SelectItem>
-                    <SelectItem value="hidden">Hidden (no card)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {isPromoMode ? (
-                <div className="grid gap-4 rounded-xl border border-border/80 bg-muted/20 p-4">
-                  <p className="text-sm text-muted-foreground">
-                    Promote an event or offer on the home card. Members tap through to your link.
-                  </p>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="promo-badge">Badge</Label>
-                    <Input
-                      id="promo-badge"
-                      value={config.promo_badge_label}
-                      onChange={(e) => update("promo_badge_label", e.target.value)}
-                      disabled={loading}
-                      placeholder="Special offer"
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="promo-title">Title</Label>
-                    <Input
-                      id="promo-title"
-                      value={config.promo_title}
-                      onChange={(e) => update("promo_title", e.target.value)}
-                      disabled={loading}
-                      placeholder="Mother's Day brunch"
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="promo-subtitle">Subtitle (home card)</Label>
-                    <Input
-                      id="promo-subtitle"
-                      value={config.promo_subtitle}
-                      onChange={(e) => update("promo_subtitle", e.target.value)}
-                      disabled={loading}
-                      placeholder="Sunday 11 May · Limited spots"
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="promo-link">Link</Label>
-                    <Input
-                      id="promo-link"
-                      value={config.promo_link}
-                      onChange={(e) => update("promo_link", e.target.value)}
-                      disabled={loading}
-                      placeholder="/schedule or https://…"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      App path (e.g. /schedule, /pricing) or full https URL.
-                    </p>
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="promo-cta">Call to action</Label>
-                    <Input
-                      id="promo-cta"
-                      value={config.promo_link_label}
-                      onChange={(e) => update("promo_link_label", e.target.value)}
-                      disabled={loading}
-                      placeholder="Tap to view →"
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="promo-image-url">Promo image URL</Label>
-                    <Input
-                      id="promo-image-url"
-                      value={config.promo_image_url}
-                      onChange={(e) => update("promo_image_url", e.target.value)}
-                      disabled={loading}
-                      placeholder="Optional — falls back to challenge image"
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2"
-                    disabled={loading || uploading}
-                    onClick={() => {
-                      setImageTarget("promo");
-                      imageInputRef.current?.click();
-                    }}
-                  >
-                    {uploading && imageTarget === "promo" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ImageIcon className="h-4 w-4" />
-                    )}
-                    Upload promo image
-                  </Button>
-                </div>
-              ) : null}
-            </div>
-          </section>
+          <HomeSpotlightsManager challengeConfig={config} />
 
           <section className="rounded-2xl border border-border bg-card p-5">
             <h3 className="mb-4 font-display text-lg font-semibold">Movement challenge</h3>
@@ -431,147 +323,19 @@ function AdminChallengePage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-border bg-card p-5">
-            <h3 className="mb-1 font-display text-lg font-semibold">Event card (bottom of home)</h3>
-            <p className="mb-4 text-sm text-muted-foreground">
-              Separate promo card with image, date, price, and copy. Shown below core home content,
-              alongside the spotlight card.
-            </p>
-            <div className="grid gap-4">
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={eventCard.enabled}
-                  onCheckedChange={(v) => updateEventCard("enabled", v === true)}
-                  disabled={loading}
-                />
-                Show event card on home
-              </label>
-              <div className="grid gap-1.5">
-                <Label htmlFor="event-title">Title</Label>
-                <Input
-                  id="event-title"
-                  value={eventCard.title}
-                  onChange={(e) => updateEventCard("title", e.target.value)}
-                  disabled={loading}
-                  placeholder="Summer solstice workshop"
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="grid gap-1.5">
-                  <Label htmlFor="event-date">Date (display text)</Label>
-                  <Input
-                    id="event-date"
-                    value={eventCard.event_date}
-                    onChange={(e) => updateEventCard("event_date", e.target.value)}
-                    disabled={loading}
-                    placeholder="Saturday 12 July"
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor="event-price">Price (display text)</Label>
-                  <Input
-                    id="event-price"
-                    value={eventCard.price_label}
-                    onChange={(e) => updateEventCard("price_label", e.target.value)}
-                    disabled={loading}
-                    placeholder="R450"
-                  />
-                </div>
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="event-body">Description</Label>
-                <Textarea
-                  id="event-body"
-                  value={eventCard.body_text}
-                  onChange={(e) => updateEventCard("body_text", e.target.value)}
-                  disabled={loading}
-                  rows={3}
-                  placeholder="What members should know about this event…"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="event-link">Link</Label>
-                <Input
-                  id="event-link"
-                  value={eventCard.link_url}
-                  onChange={(e) => updateEventCard("link_url", e.target.value)}
-                  disabled={loading}
-                  placeholder="/schedule or https://…"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="event-cta">Call to action</Label>
-                <Input
-                  id="event-cta"
-                  value={eventCard.link_label}
-                  onChange={(e) => updateEventCard("link_label", e.target.value)}
-                  disabled={loading}
-                  placeholder="Book your spot"
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="event-image-url">Image URL</Label>
-                <Input
-                  id="event-image-url"
-                  value={eventCard.image_url}
-                  onChange={(e) => updateEventCard("image_url", e.target.value)}
-                  disabled={loading}
-                  placeholder="Optional hero image"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2"
-                disabled={loading || uploading}
-                onClick={() => {
-                  setImageTarget("event");
-                  imageInputRef.current?.click();
-                }}
-              >
-                {uploading && imageTarget === "event" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ImageIcon className="h-4 w-4" />
-                )}
-                Upload event image
-              </Button>
-            </div>
-          </section>
         </div>
 
         <aside className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Home preview
+            Challenge card preview
           </p>
-          {config.home_card_mode === "hidden" ? (
-            <p className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-              Card hidden on home
-            </p>
-          ) : (
-            <div className="pointer-events-none">
-              <HomeSpotlightCard
-                config={previewConfig}
-                challengeStamped={0}
-                challengeTotalDays={totalDays}
-              />
-            </div>
-          )}
-          {!isPromoMode && config.home_card_mode !== "hidden" ? (
-            <p className="text-xs text-muted-foreground">
-              Image: {homeSpotlightImageUrl(config) ? "custom" : "default"}
-            </p>
-          ) : null}
-          {eventCard.enabled && eventCard.title.trim() ? (
-            <>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Event card preview
-              </p>
-              <div className="pointer-events-none">
-                <HomeEventCard config={eventCard} />
-              </div>
-            </>
-          ) : null}
+          <div className="pointer-events-none">
+            <HomeSpotlightCard
+              config={{ ...config, home_card_mode: "challenge" }}
+              challengeStamped={0}
+              challengeTotalDays={totalDays}
+            />
+          </div>
         </aside>
       </div>
 

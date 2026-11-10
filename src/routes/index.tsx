@@ -8,10 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { movementChallengeTotalDays } from "@/lib/movementChallenge";
 import { CancelBookingButton } from "@/components/CancelBookingButton";
-import { HomeSpotlightCard, homeSpotlightCardVisible } from "@/components/HomeSpotlightCard";
-import { HomeEventCard } from "@/components/HomeEventCard";
+import { HomeSpotlightSlot } from "@/components/HomeSpotlightSlot";
 import { MemberPassesPanel } from "@/components/MemberPassesPanel";
-import { homeEventCardVisible } from "@/lib/homeEventCard";
 import {
   activeMatAccessLabels,
   activeTowelAccessLabels,
@@ -129,6 +127,13 @@ function HomePage() {
         <h1 className="px-10 text-center font-display text-[44px] font-bold leading-tight tracking-tight">
           {welcomeTitle}
         </h1>
+
+        <HomeSpotlightSlot
+          placement="top"
+          challengeConfig={challengeConfig}
+          challengeStamped={challengeStamped}
+          challengeTotalDays={challengeTotalDays}
+        />
 
         <section className="rounded-2xl border border-border bg-card p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
@@ -305,24 +310,12 @@ function HomePage() {
 
         <MemberPassesPanel />
 
-        {(challengeConfig && homeSpotlightCardVisible(challengeConfig)) ||
-        (homeEventCard && homeEventCardVisible(homeEventCard)) ? (
-          <section className="space-y-4 border-t border-border pt-2">
-            <p className="text-center text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              From the studio
-            </p>
-            {challengeConfig && homeSpotlightCardVisible(challengeConfig) ? (
-              <HomeSpotlightCard
-                config={challengeConfig}
-                challengeStamped={challengeStamped}
-                challengeTotalDays={challengeTotalDays}
-              />
-            ) : null}
-            {homeEventCard && homeEventCardVisible(homeEventCard) ? (
-              <HomeEventCard config={homeEventCard} />
-            ) : null}
-          </section>
-        ) : null}
+        <HomeSpotlightSlot
+          placement="bottom"
+          challengeConfig={challengeConfig}
+          challengeStamped={challengeStamped}
+          challengeTotalDays={challengeTotalDays}
+        />
       </main>
     </AppShell>
   );
