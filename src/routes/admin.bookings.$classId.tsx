@@ -433,7 +433,19 @@ function BookingClassDetailPage() {
                           cafe={b.hasSageCredit}
                         />
                       </p>
-                      <p className="truncate text-xs text-muted-foreground">{b.creditLabel}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {b.creditLabel}
+                        {b.bookedAt
+                          ? ` · booked ${new Date(b.bookedAt).toLocaleString("en-ZA", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              hour12: false,
+                              timeZone: "Africa/Johannesburg",
+                            })}`
+                          : ""}
+                      </p>
                     </div>
                     <span className={rosterStatusClass(b.status)}>{rosterStatusLabel(b.status)}</span>
                     <div className="flex w-full justify-end gap-2 sm:w-auto sm:flex-none">

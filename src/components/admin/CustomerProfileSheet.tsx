@@ -157,6 +157,19 @@ type BookingRow = {
   classes: { name: string; starts_at: string } | { name: string; starts_at: string }[] | null;
 };
 
+/** When the booking was made, in studio time, e.g. "10 Nov, 14:32". */
+function formatBookedAt(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-ZA", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Africa/Johannesburg",
+  });
+}
+
 function oneClass(c: BookingRow["classes"]): { name: string; starts_at: string } | null {
   if (!c) return null;
   return Array.isArray(c) ? (c[0] ?? null) : c;
@@ -1156,7 +1169,7 @@ export function CustomerProfileSheet({
                           <th className="px-3 py-2 font-medium">Product</th>
                           <th className="px-3 py-2 font-medium">Assigned</th>
                           <th className="px-3 py-2 font-medium">Credits total</th>
-                          <th className="px-3 py-2 font-medium">Payment</th>
+                          <th className="px-3 py-2 font-medium">Payment / booked</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1245,8 +1258,13 @@ export function CustomerProfileSheet({
                                   {b.status}
                                 </span>
                               </td>
-                              <td className="max-w-[120px] truncate px-3 py-2 text-muted-foreground">
-                                {(b.payment_method ?? "—").replace(/_/g, " ")}
+                              <td className="max-w-[140px] px-3 py-2 text-muted-foreground">
+                                <span className="block truncate">
+                                  {(b.payment_method ?? "—").replace(/_/g, " ")}
+                                </span>
+                                <span className="block text-[11px]">
+                                  Booked {formatBookedAt(b.created_at)}
+                                </span>
                               </td>
                             </tr>
                           );
