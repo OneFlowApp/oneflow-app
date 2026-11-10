@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { BadgeCheck, Copy, ExternalLink, X } from "lucide-react";
+import { BadgeCheck, Copy, ExternalLink, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
@@ -64,6 +64,41 @@ type Perk = {
 };
 type Person = { first_name: string | null; last_name: string | null; avatar_url: string | null };
 
+/** One active balance shown under the card, so a front desk can see what's left. */
+type Balance = {
+  id: string;
+  product_name: string | null;
+  is_unlimited: boolean | null;
+  credits_total: number | null;
+  credits_remaining: number | null;
+  expires_at: string | null;
+  access_scope: string | null;
+  category: string | null;
+};
+type GreenPointVisit = { id: string; credit_id: string; used_at: string };
+
+/** Up to 20 credits show as dots (used ones crossed off); bigger packs show a count. */
+function Tally({ total, left }: { total: number; left: number }) {
+  if (total <= 0) return null;
+  if (total > 20) return <span className="text-xs text-white/80">{left} of {total} left</span>;
+  return (
+    <span className="flex flex-wrap items-center gap-1" aria-label={`${left} of ${total} left`}>
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          className={cn(
+            "h-3 w-3 rounded-full border",
+            i < left ? "border-[#d4e3c8] bg-[#a3b693]" : "border-white/40 bg-transparent",
+          )}
+        />
+      ))}
+      <span className="ml-1 text-xs text-white/80">
+        {left}/{total}
+      </span>
+    </span>
+  );
+}
+
 function formatDate(iso: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleDateString("en-ZA", {
@@ -84,13 +119,16 @@ export function MembershipCard() {
   const [person, setPerson] = useState<Person | null>(null);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [balances, setBalances] = useState<Balance[]>([]);
+  const [gpVisits, setGpVisits] = useState<GreenPointVisit[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const user = await getUser();
       if (!user) return;
-      const [mRes, pRes, meRes] = await Promise.all([
+      const nowIso = new Date().toISOString();
+      const [mRes, pRes, meRes, bRes, vRes] = await Promise.all([
         supabase.rpc("my_membership"),
         supabase
           .from("membership_perks")
@@ -102,6 +140,21 @@ export function MembershipCard() {
           .select("first_name, last_name, avatar_url")
           .eq("id", user.id)
           .maybeSingle(),
+        supabase
+          .from("user_credits")
+          .select(
+            "id, product_name, is_unlimited, credits_total, credits_remaining, expires_at, access_scope, category",
+          )
+          .eq("profile_id", user.id)
+          .is("refunded_at", null)
+          .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+          .order("expires_at", { ascending: true }),
+        supabase
+          .from("green_point_visits")
+          .select("id, credit_id, used_at")
+          .eq("profile_id", user.id)
+          .order("used_at", { ascending: false })
+          .limit(5),
       ]);
       if (cancelled) return;
       if (mRes.error) {
@@ -112,6 +165,14 @@ export function MembershipCard() {
       setMembership(m ?? null);
       setPerks((pRes.data ?? []) as Perk[]);
       setPerson((meRes.data ?? null) as Person | null);
+      setBalances(
+        ((bRes.data ?? []) as Balance[]).filter(
+          (b) =>
+            b.category !== "cafe" &&
+            (b.is_unlimited || (b.credits_remaining ?? 0) > 0 || (b.credits_total ?? 0) === 0),
+        ),
+      );
+      setGpVisits((vRes.data ?? []) as GreenPointVisit[]);
     })();
     return () => {
       cancelled = true;
@@ -131,6 +192,8 @@ export function MembershipCard() {
   const isStaff = membership.is_staff === true;
   const style = CARD_STYLE[isStaff ? "staff" : tier];
   const badge = isStaff ? (membership.staff_label ?? "Team") : `${TIER_NAME[tier]} member`;
+  const creditBalances = balances.filter((b) => b.category !== "mat_towel");
+  const bothStudios = creditBalances.some((b) => b.access_scope === "open_access");
   const initials = name
     .split(/\s+/)
     .map((w) => w.charAt(0))
@@ -206,6 +269,12 @@ export function MembershipCard() {
                     {badge}
                   </span>
                 </div>
+                {bothStudios ? (
+                  <p className="relative mt-3 inline-flex items-center gap-1.5 rounded-full bg-[#d4af37] px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-[#2b2205] shadow">
+                    <Star className="h-3.5 w-3.5 fill-[#2b2205]" aria-hidden />
+                    Longkloof &amp; Green Point
+                  </p>
+                ) : null}
                 <div className="relative mt-6 flex items-center gap-4">
                   {person?.avatar_url ? (
                     <img
@@ -247,6 +316,47 @@ export function MembershipCard() {
                   Live card · {now.toLocaleDateString("en-ZA")}
                 </p>
               </div>
+
+              {creditBalances.length > 0 ? (
+                <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3">
+                  <p className="mb-2 text-sm font-semibold uppercase tracking-wide text-white/80">
+                    Your credits
+                  </p>
+                  <ul className="space-y-3">
+                    {creditBalances.map((b) => (
+                      <li key={b.id}>
+                        <p className="flex items-center gap-1.5 text-sm font-semibold">
+                          {b.access_scope === "open_access" ? (
+                            <Star className="h-3.5 w-3.5 shrink-0 fill-[#d4af37] text-[#d4af37]" aria-hidden />
+                          ) : null}
+                          {b.product_name ?? "Pack"}
+                        </p>
+                        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                          {b.is_unlimited ? (
+                            <span className="text-xs text-white/80">Unlimited</span>
+                          ) : (
+                            <Tally total={b.credits_total ?? 0} left={b.credits_remaining ?? 0} />
+                          )}
+                          <span className="text-[11px] text-white/70">
+                            {b.access_scope === "open_access" ? "Longkloof & Green Point" : "Longkloof"}
+                            {b.expires_at ? ` · until ${new Date(b.expires_at).toLocaleDateString("en-ZA")}` : ""}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                  {gpVisits.length > 0 ? (
+                    <p className="mt-3 border-t border-white/15 pt-2 text-[11px] text-white/75">
+                      Green Point visits:{" "}
+                      {gpVisits
+                        .map((v) =>
+                          new Date(v.used_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short" }),
+                        )
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3 text-sm">
                 <p className="font-semibold">
