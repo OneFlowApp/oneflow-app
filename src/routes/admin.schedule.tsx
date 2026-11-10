@@ -43,7 +43,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DEFAULT_STUDIO_ROOM, STUDIO_ROOMS } from "@/lib/studioRooms";
-import { alertBookedMembersOfChanges, snapshotClasses } from "@/lib/classChangeAlerts";
+import {
+  planClassChangeAlerts,
+  sendClassChangeAlerts,
+  snapshotClasses,
+  type ClassChangePlan,
+} from "@/lib/classChangeAlerts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -468,6 +473,9 @@ function SchedulePage() {
   const [guideChangeScope, setGuideChangeScope] = useState<RecurringScope | null>(null);
   /** Editing a class in a weekly series: change just this one, or this and all future ones. */
   const [editScope, setEditScope] = useState<RecurringScope>("single");
+  /** After a time or class change: who is booked, waiting for "Send message" or "Don't send". */
+  const [changePlan, setChangePlan] = useState<ClassChangePlan | null>(null);
+  const [sendingAlerts, setSendingAlerts] = useState(false);
   /** Long block on create: one session, or split into sessions of `splitMinutes`. */
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitMode, setSplitMode] = useState<"single" | "multiple">("multiple");
@@ -1338,16 +1346,11 @@ function SchedulePage() {
       }
 
       try {
-        const me = await getUser();
-        const told = await alertBookedMembersOfChanges(beforeChange, me?.id ?? null);
-        if (told > 0) {
-          toast.success(`${told} booked member${told === 1 ? "" : "s"} told about the change`, {
-            description: "They get a message in the app and an email.",
-          });
-        }
+        const plan = await planClassChangeAlerts(beforeChange);
+        if (plan.people > 0) setChangePlan(plan);
       } catch (alertErr) {
         console.error("class change alerts", alertErr);
-        toast.error("Saved, but booked members could not be told about the change");
+        toast.error("Saved, but we couldn't check who is booked. Tell booked members yourself.");
       }
 
       setDialogOpen(false);
@@ -2746,6 +2749,64 @@ function SchedulePage() {
               )}
             </DialogFooter>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={changePlan !== null} onOpenChange={(o) => !o && !sendingAlerts && setChangePlan(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tell booked members about the change?</DialogTitle>
+            <DialogDescription>
+              {changePlan?.people ?? 0} member{(changePlan?.people ?? 0) === 1 ? " is" : "s are"} booked into{" "}
+              {changePlan?.items.length ?? 0} class{(changePlan?.items.length ?? 0) === 1 ? "" : "es"} that
+              changed. They&apos;ll get a message in the app and an email.
+            </DialogDescription>
+          </DialogHeader>
+          {changePlan?.items[0] ? (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Message{changePlan.items.length > 1 ? " (first class)" : ""}
+              </p>
+              <p className="font-medium">Change to your class: {changePlan.items[0].after.title}</p>
+              <p className="mt-1 text-muted-foreground">{changePlan.items[0].message}</p>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={sendingAlerts}
+              onClick={() => {
+                setChangePlan(null);
+                toast.message("Saved. Booked members were not told.");
+              }}
+            >
+              Don&apos;t send
+            </Button>
+            <Button
+              type="button"
+              disabled={sendingAlerts}
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+              onClick={async () => {
+                if (!changePlan) return;
+                setSendingAlerts(true);
+                try {
+                  const me = await getUser();
+                  const told = await sendClassChangeAlerts(changePlan, me?.id ?? null);
+                  toast.success(`${told} member${told === 1 ? "" : "s"} told about the change`);
+                  setChangePlan(null);
+                } catch (e) {
+                  console.error("send class change alerts", e);
+                  toast.error("Messages could not be sent. Please try again.");
+                } finally {
+                  setSendingAlerts(false);
+                }
+              }}
+            >
+              {sendingAlerts ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Send message
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -18,6 +18,34 @@ type Line = {
 
 const TZ = "Africa/Johannesburg";
 
+const LINK_RE = /((?:https?:\/\/|www\.)[^\s<]+[^\s<.,;:!?)\]'"])/gi;
+
+/** Message text with web addresses turned into tappable links (opened in a new tab). */
+function Linkified({ text }: { text: string }) {
+  const parts = text.split(LINK_RE);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (i % 2 === 1) {
+          const href = /^https?:\/\//i.test(part) ? part : `https://${part}`;
+          return (
+            <a
+              key={i}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="break-all font-medium text-[#2f6b8a] underline underline-offset-2"
+            >
+              {part}
+            </a>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
 function dayLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("en-ZA", {
     timeZone: TZ,
@@ -211,7 +239,9 @@ export function ConversationThread({
                       </p>
                     ) : null}
                     {l.subject ? <p className="font-semibold">{l.subject}</p> : null}
-                    <p className="whitespace-pre-wrap break-words">{l.body}</p>
+                    <p className="whitespace-pre-wrap break-words">
+                      <Linkified text={l.body} />
+                    </p>
                     <p className="mt-0.5 text-right text-[10px] text-muted-foreground">{timeLabel(l.at)}</p>
                   </div>
                 </div>
