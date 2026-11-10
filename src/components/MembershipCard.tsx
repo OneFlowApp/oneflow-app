@@ -4,8 +4,57 @@ import { BadgeCheck, Copy, ExternalLink, X } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
+import { cn } from "@/lib/utils";
 
-type Membership = { is_member: boolean; valid_until: string | null; pack_names: string[] | null };
+type Tier = "green" | "silver" | "gold" | "platinum";
+
+type Membership = {
+  is_member: boolean;
+  valid_until: string | null;
+  pack_names: string[] | null;
+  is_staff?: boolean | null;
+  staff_label?: string | null;
+  tier?: Tier | null;
+  classes_12m?: number | null;
+  next_tier?: Tier | null;
+  classes_to_next?: number | null;
+};
+
+/** Card finishes by reward tier, plus the team card for guides and staff. */
+const CARD_STYLE: Record<Tier | "staff", { card: string; chip: string; text: string; lightLogo: boolean }> = {
+  green: {
+    card: "bg-gradient-to-br from-[#a3b693] via-[#7f9a6e] to-[#5f7a52]",
+    chip: "bg-white/20",
+    text: "text-white",
+    lightLogo: true,
+  },
+  silver: {
+    card: "bg-gradient-to-br from-[#f4f6f7] via-[#bfc6cc] to-[#7c858d]",
+    chip: "bg-black/10",
+    text: "text-[#1f2428]",
+    lightLogo: false,
+  },
+  gold: {
+    card: "bg-gradient-to-br from-[#f7e7a1] via-[#d4af37] to-[#9c7a1c]",
+    chip: "bg-black/10",
+    text: "text-[#2b2205]",
+    lightLogo: false,
+  },
+  platinum: {
+    card: "bg-gradient-to-br from-[#e9eef5] via-[#8a94a6] to-[#2e3440]",
+    chip: "bg-white/20",
+    text: "text-white",
+    lightLogo: true,
+  },
+  staff: {
+    card: "bg-gradient-to-br from-[#26331f] via-[#34452c] to-[#11170f] ring-1 ring-[#d4af37]/60",
+    chip: "bg-[#d4af37]/25 text-[#f3dc8a]",
+    text: "text-[#f5f1e6]",
+    lightLogo: true,
+  },
+};
+
+const TIER_NAME: Record<Tier, string> = { green: "Green", silver: "Silver", gold: "Gold", platinum: "Platinum" };
 type Perk = {
   id: string;
   title: string;
@@ -78,6 +127,10 @@ export function MembershipCard() {
   if (!membership?.is_member) return null;
 
   const name = [person?.first_name, person?.last_name].filter(Boolean).join(" ") || "Member";
+  const tier: Tier = membership.tier ?? "green";
+  const isStaff = membership.is_staff === true;
+  const style = CARD_STYLE[isStaff ? "staff" : tier];
+  const badge = isStaff ? (membership.staff_label ?? "Team") : `${TIER_NAME[tier]} member`;
   const initials = name
     .split(/\s+/)
     .map((w) => w.charAt(0))
@@ -97,10 +150,9 @@ export function MembershipCard() {
           <span>
             <span className="block text-sm font-semibold text-[#3d4f36]">Your membership</span>
             <span className="block text-xs text-muted-foreground">
-              {perks.length > 0
-                ? `${perks.length} member perk${perks.length === 1 ? "" : "s"} · `
-                : ""}
-              Tap to show your card
+              {badge}
+              {perks.length > 0 ? ` · ${perks.length} perk${perks.length === 1 ? "" : "s"}` : ""} · Tap
+              to show your card
             </span>
           </span>
         </span>
@@ -128,14 +180,33 @@ export function MembershipCard() {
                 </button>
               </div>
 
-              <div className="mx-auto mt-2 w-full max-w-sm rounded-3xl bg-gradient-to-br from-[#a3b693] to-[#5f7a52] p-6 shadow-2xl">
-                <div className="flex items-center justify-between">
-                  <img src={logo} alt="One Flow" className="h-10 w-auto brightness-0 invert" />
-                  <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide">
-                    Member
+              <div
+                className={cn(
+                  "relative mx-auto mt-2 w-full max-w-sm overflow-hidden rounded-3xl p-6 shadow-2xl",
+                  style.card,
+                  style.text,
+                )}
+              >
+                <div
+                  className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/20 blur-2xl"
+                  aria-hidden
+                />
+                <div className="relative flex items-center justify-between">
+                  <img
+                    src={logo}
+                    alt="One Flow"
+                    className={cn("h-10 w-auto brightness-0", style.lightLogo && "invert")}
+                  />
+                  <span
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide",
+                      style.chip,
+                    )}
+                  >
+                    {badge}
                   </span>
                 </div>
-                <div className="mt-6 flex items-center gap-4">
+                <div className="relative mt-6 flex items-center gap-4">
                   {person?.avatar_url ? (
                     <img
                       src={person.avatar_url}
@@ -150,14 +221,17 @@ export function MembershipCard() {
                   <div className="min-w-0">
                     <p className="truncate font-display text-xl font-bold">{name}</p>
                     {membership.valid_until ? (
-                      <p className="text-sm text-white/85">
+                      <p className="text-sm opacity-85">
                         Valid until {formatDate(membership.valid_until)}
                       </p>
                     ) : null}
                   </div>
                 </div>
                 {membership.pack_names && membership.pack_names.length > 0 ? (
-                  <p className="mt-4 text-xs text-white/85">{membership.pack_names.join(" · ")}</p>
+                  <p className="relative mt-4 text-xs opacity-90">
+                    <span className="font-semibold">Access: </span>
+                    {membership.pack_names.join(" · ")}
+                  </p>
                 ) : null}
                 <p
                   className="mt-5 text-center font-mono text-2xl tabular-nums tracking-wider"
@@ -169,8 +243,20 @@ export function MembershipCard() {
                     second: "2-digit",
                   })}
                 </p>
-                <p className="text-center text-[11px] text-white/75">
+                <p className="text-center text-[11px] opacity-75">
                   Live card · {now.toLocaleDateString("en-ZA")}
+                </p>
+              </div>
+
+              <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3 text-sm">
+                <p className="font-semibold">
+                  {TIER_NAME[tier]} tier · {membership.classes_12m ?? 0} class
+                  {(membership.classes_12m ?? 0) === 1 ? "" : "es"} in the last 12 months
+                </p>
+                <p className="text-xs text-white/75">
+                  {membership.next_tier
+                    ? `${membership.classes_to_next ?? 0} more to reach ${TIER_NAME[membership.next_tier]}.`
+                    : "You've reached our top tier. Thank you!"}
                 </p>
               </div>
 
