@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DeleteMemberSection } from "@/components/admin/DeleteMemberSection";
+import { SendMemberMessageSection } from "@/components/admin/SendMemberMessageSection";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -1120,6 +1121,8 @@ export function CustomerProfileSheet({
                   </ul>
                 )}
               </section>
+
+              <SendMemberMessageSection profileId={profile.id} memberName={fullName} />
 
               <MemberFeesSection profileId={profile.id} canWaive={canManage} />
 

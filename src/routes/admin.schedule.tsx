@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DEFAULT_STUDIO_ROOM, STUDIO_ROOMS } from "@/lib/studioRooms";
+import { alertBookedMembersOfChanges, snapshotClasses } from "@/lib/classChangeAlerts";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1207,6 +1208,7 @@ function SchedulePage() {
     const wantsTicket = ticketPrice != null;
 
     // The room must be free at the new time (for a series: at every future class).
+    let beforeChange: Awaited<ReturnType<typeof snapshotClasses>> = new Map();
     try {
       let intervals = [{ start, end }];
       let exclude = new Set<string>([editingId]);
@@ -1239,6 +1241,8 @@ function SchedulePage() {
         setSaving(false);
         return;
       }
+      // Remember how the affected classes looked, so booked members can be told what changed.
+      beforeChange = await snapshotClasses([...exclude]);
     } catch (e) {
       toast.error(supabaseErrorMessage(e, "Could not check the room"));
       setSaving(false);
@@ -1331,6 +1335,19 @@ function SchedulePage() {
         const { error } = await supabase.from("classes").update(base).eq("id", editingId);
         if (error) throw error;
         toast.success("Class updated");
+      }
+
+      try {
+        const me = await getUser();
+        const told = await alertBookedMembersOfChanges(beforeChange, me?.id ?? null);
+        if (told > 0) {
+          toast.success(`${told} booked member${told === 1 ? "" : "s"} told about the change`, {
+            description: "They get a message in the app and an email.",
+          });
+        }
+      } catch (alertErr) {
+        console.error("class change alerts", alertErr);
+        toast.error("Saved, but booked members could not be told about the change");
       }
 
       setDialogOpen(false);
