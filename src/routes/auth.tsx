@@ -4,7 +4,7 @@ import { getUser, supabase } from "@/lib/supabase";
 import { landingPathFor } from "@/lib/roleAccess";
 import { ensureProfileNamesFromOAuth } from "@/lib/oauthProfileNames";
 import { applyStoredReferrerToProfile, captureReferrerFromSearch } from "@/lib/referral";
-import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
+import { useStudioWhatsAppUrl } from "@/lib/studioContact";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -71,6 +71,7 @@ async function resolveDestination(userId: string, redirectPath?: string) {
 }
 
 function AuthPage() {
+  const whatsappUrl = useStudioWhatsAppUrl();
   const navigate = useNavigate();
   const search = Route.useSearch();
 
@@ -381,7 +382,7 @@ function AuthPage() {
       <p className="mt-8 text-center text-xs text-muted-foreground">
         Need help?{" "}
         <a
-          href={STUDIO_WHATSAPP_URL}
+          href={whatsappUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="text-foreground underline-offset-4 hover:underline"
