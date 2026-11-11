@@ -42,9 +42,16 @@ const SETTING_KEYS = [
   "checkin_open_minutes_before",
   "flow_points_per_class",
   "flow_points_conversion_rate",
+  "tier_green_classes",
+  "tier_bronze_classes",
   "tier_silver_classes",
   "tier_gold_classes",
-  "tier_platinum_classes",
+  "tier_green_keep",
+  "tier_bronze_keep",
+  "tier_silver_keep",
+  "tier_gold_keep",
+  "tier_inactive_days",
+  "tier_restore_classes",
 ] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -63,9 +70,16 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   checkin_open_minutes_before: "120",
   flow_points_per_class: "10",
   flow_points_conversion_rate: "10",
-  tier_silver_classes: "25",
-  tier_gold_classes: "75",
-  tier_platinum_classes: "150",
+  tier_green_classes: "40",
+  tier_bronze_classes: "100",
+  tier_silver_classes: "250",
+  tier_gold_classes: "500",
+  tier_green_keep: "20",
+  tier_bronze_keep: "40",
+  tier_silver_keep: "75",
+  tier_gold_keep: "100",
+  tier_inactive_days: "60",
+  tier_restore_classes: "4",
 };
 
 function csvEscape(s: string): string {
@@ -309,21 +323,29 @@ function SettingsPage() {
         ],
       },
       {
-        section: "Membership tiers (classes attended in the last 12 months)",
+        section: "Membership tiers: earned on total classes ever",
+        items: (["green", "bronze", "silver", "gold"] as const).map((t) => ({
+          key: `tier_${t}_classes` as SettingKey,
+          label: `${t.charAt(0).toUpperCase()}${t.slice(1)} card from (total classes)`,
+          type: "number",
+        })),
+      },
+      {
+        section: "Membership tiers: kept with classes in the last 12 months",
         items: [
+          ...(["green", "bronze", "silver", "gold"] as const).map((t) => ({
+            key: `tier_${t}_keep` as SettingKey,
+            label: `${t.charAt(0).toUpperCase()}${t.slice(1)}: classes a year to keep it`,
+            type: "number",
+          })),
           {
-            key: "tier_silver_classes" as SettingKey,
-            label: "Silver card from (classes)",
+            key: "tier_inactive_days" as SettingKey,
+            label: "Drop one tier after this many days with no class",
             type: "number",
           },
           {
-            key: "tier_gold_classes" as SettingKey,
-            label: "Gold card from (classes)",
-            type: "number",
-          },
-          {
-            key: "tier_platinum_classes" as SettingKey,
-            label: "Platinum card from (classes)",
+            key: "tier_restore_classes" as SettingKey,
+            label: "Classes after coming back to restore the tier",
             type: "number",
           },
         ],

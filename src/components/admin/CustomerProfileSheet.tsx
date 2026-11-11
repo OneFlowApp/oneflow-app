@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DeleteMemberSection } from "@/components/admin/DeleteMemberSection";
 import { ConversationThread } from "@/components/ConversationThread";
 import { ContinuousFlowSection } from "@/components/admin/ContinuousFlowSection";
+import { TierSection } from "@/components/admin/TierSection";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -1155,6 +1156,11 @@ export function CustomerProfileSheet({
               <ContinuousFlowSection
                 profileId={profile.id}
                 canRestore={["director", "management"].includes(String(viewerRole ?? ""))}
+              />
+
+              <TierSection
+                profileId={profile.id}
+                canPause={["director", "management"].includes(String(viewerRole ?? ""))}
               />
 
               <section className="border-t border-border pt-6">
