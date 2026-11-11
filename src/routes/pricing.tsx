@@ -19,7 +19,7 @@ import {
   maxPackFlowPointsRedemption,
   parseFlowPointsConversionRate,
 } from "@/lib/flowPointsRedemption";
-import { STUDIO_WHATSAPP_URL } from "@/lib/studioContact";
+import { useStudioWhatsAppUrl } from "@/lib/studioContact";
 import { cn } from "@/lib/utils";
 
 /** Legacy `?category=` deep links (e.g. from credit balances) open sections containing that category. */
@@ -156,6 +156,7 @@ function filterCustomerPricingProducts(rows: ProductRow[]): ProductRow[] {
 }
 
 function PricingPage() {
+  const whatsappUrl = useStudioWhatsAppUrl();
   const router = useRouter();
   const search = Route.useSearch();
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -878,7 +879,7 @@ function PricingPage() {
             Questions?{" "}
             <button
               type="button"
-              onClick={() => window.open(STUDIO_WHATSAPP_URL, "_blank")}
+              onClick={() => window.open(whatsappUrl, "_blank")}
               className="font-medium text-[#a3b693] underline-offset-2 hover:underline dark:text-primary"
             >
               Contact us on WhatsApp

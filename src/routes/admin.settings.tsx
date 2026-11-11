@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { whatsappDigits } from "@/lib/studioContact";
+import { queryClient } from "@/lib/queryClient";
 
 export const Route = createFileRoute("/admin/settings")({
   head: () => ({ meta: [{ title: "Settings — One Flow Admin" }] }),
@@ -29,6 +31,7 @@ export const Route = createFileRoute("/admin/settings")({
 const SETTING_KEYS = [
   "studio_name",
   "studio_phone",
+  "studio_whatsapp",
   "studio_email",
   "late_cancel_fee_zar",
   "no_show_fee_zar",
@@ -49,6 +52,7 @@ type SettingKey = (typeof SETTING_KEYS)[number];
 const DEFAULT_VALUES: Record<SettingKey, string> = {
   studio_name: "One Flow",
   studio_phone: "+27 82 553 3033",
+  studio_whatsapp: "+27 82 553 3033",
   studio_email: "info@oneflow.co.za",
   late_cancel_fee_zar: "100",
   no_show_fee_zar: "200",
@@ -120,6 +124,10 @@ function SettingsPage() {
   };
 
   const saveAll = async () => {
+    if (!whatsappDigits(values.studio_whatsapp)) {
+      toast.error("WhatsApp number doesn't look right. Use a full number, e.g. +27 82 553 3033");
+      return;
+    }
     setSaving(true);
     const user = await getUser();
     const updatedBy = user?.id ?? null;
@@ -136,6 +144,7 @@ function SettingsPage() {
       toast.error(supabaseErrorMessage(error, "Could not save settings"));
       return;
     }
+    void queryClient.invalidateQueries({ queryKey: ["studio-whatsapp-number"] });
     toast.success("Settings saved");
   };
 
@@ -236,6 +245,11 @@ function SettingsPage() {
         items: [
           { key: "studio_name" as SettingKey, label: "Studio name", type: "text" },
           { key: "studio_phone" as SettingKey, label: "Phone", type: "tel" },
+          {
+            key: "studio_whatsapp" as SettingKey,
+            label: "WhatsApp number (the green chat button members tap)",
+            type: "tel",
+          },
           { key: "studio_email" as SettingKey, label: "Email", type: "email" },
         ],
       },
