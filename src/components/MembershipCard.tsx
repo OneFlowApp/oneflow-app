@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { BadgeCheck, Copy, ExternalLink, Star, X } from "lucide-react";
+import { BadgeCheck, ChevronDown, Copy, ExternalLink, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
@@ -166,6 +166,82 @@ function formatDate(iso: string | null): string {
  * Opens a full-screen digital membership card with a live clock (so a screenshot is easy to spot)
  * and the membership perks set in Admin → Settings.
  */
+type TierRules = Record<string, number>;
+const TIER_DEFAULTS: TierRules = {
+  tier_green_classes: 40,
+  tier_bronze_classes: 100,
+  tier_silver_classes: 250,
+  tier_gold_classes: 500,
+  tier_green_keep: 20,
+  tier_bronze_keep: 40,
+  tier_silver_keep: 75,
+  tier_gold_keep: 100,
+  tier_inactive_days: 60,
+  tier_restore_classes: 4,
+};
+
+/** "How card colours work": the tier rules, read live from Admin → Settings. */
+export function TierGuide({ rules, current }: { rules: TierRules; current: Tier | null }) {
+  const [open, setOpen] = useState(false);
+  const r = (k: string) => rules[k] ?? TIER_DEFAULTS[k];
+  const rows: Tier[] = ["green", "bronze", "silver", "gold"];
+  return (
+    <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3 text-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between font-semibold"
+        aria-expanded={open}
+      >
+        How card colours work
+        <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
+      {open ? (
+        <div className="mt-3 space-y-3 text-xs text-white/85">
+          <p>Your card changes colour as you practise with us. Every class you attend counts.</p>
+          <ul className="space-y-2">
+            <li className="flex items-center gap-3">
+              <span className={cn("h-6 w-9 shrink-0 rounded-md", CARD_STYLE.member.card)} aria-hidden />
+              <span>
+                <span className="font-semibold text-white">Member</span> · your card from day one
+              </span>
+            </li>
+            {rows.map((t) => (
+              <li key={t} className="flex items-center gap-3">
+                <span
+                  className={cn(
+                    "h-6 w-9 shrink-0 rounded-md",
+                    CARD_STYLE[t].card,
+                    current === t && "ring-2 ring-white",
+                  )}
+                  aria-hidden
+                />
+                <span>
+                  <span className="font-semibold text-white">{TIER_NAME[t]}</span> · from {r(`tier_${t}_classes`)}{" "}
+                  classes, kept with {r(`tier_${t}_keep`)} classes a year
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p>
+            <span className="font-semibold text-white">Keep it active.</span> If you go{" "}
+            {r("tier_inactive_days")} days without a class, your card drops one colour. Come back and attend{" "}
+            {r("tier_restore_classes")} classes to get it back.
+          </p>
+          <p>
+            <span className="font-semibold text-white">Taking a break?</span> Injured, pregnant or travelling? Let the
+            studio know and we can hold your colour for you.
+          </p>
+          <p>
+            <span className="font-semibold text-white">Stickers.</span> Earn badges for milestones and streaks, and they
+            land on your card as stickers.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function MembershipCard() {
   const [membership, setMembership] = useState<Membership | null>(null);
   const [perks, setPerks] = useState<Perk[]>([]);
@@ -175,6 +251,7 @@ export function MembershipCard() {
   const [balances, setBalances] = useState<Balance[]>([]);
   const [gpVisits, setGpVisits] = useState<GreenPointVisit[]>([]);
   const [stickers, setStickers] = useState<MemberBadgePreview[]>([]);
+  const [tierRules, setTierRules] = useState<TierRules>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -182,7 +259,7 @@ export function MembershipCard() {
       const user = await getUser();
       if (!user) return;
       const nowIso = new Date().toISOString();
-      const [mRes, pRes, meRes, bRes, vRes, badges] = await Promise.all([
+      const [mRes, pRes, meRes, bRes, vRes, badges, tRes] = await Promise.all([
         supabase.rpc("my_membership"),
         supabase
           .from("membership_perks")
@@ -210,6 +287,7 @@ export function MembershipCard() {
           .order("used_at", { ascending: false })
           .limit(5),
         fetchMemberBadges(user.id, 60),
+        supabase.from("studio_settings").select("key, value").like("key", "tier_%"),
       ]);
       if (cancelled) return;
       if (mRes.error) {
@@ -229,6 +307,12 @@ export function MembershipCard() {
       );
       setGpVisits((vRes.data ?? []) as GreenPointVisit[]);
       setStickers(badges);
+      const rules: TierRules = {};
+      for (const row of (tRes.data ?? []) as { key: string; value: string | null }[]) {
+        const n = Number(row.value);
+        if (Number.isFinite(n) && n > 0) rules[row.key] = n;
+      }
+      setTierRules(rules);
     })();
     return () => {
       cancelled = true;
@@ -472,6 +556,8 @@ export function MembershipCard() {
                   </p>
                 </div>
               ) : null}
+
+              {!isStaff ? <TierGuide rules={tierRules} current={tier} /> : null}
 
               {stickers.length > 0 ? (
                 <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3">
