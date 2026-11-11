@@ -5,8 +5,9 @@ import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
 import { cn } from "@/lib/utils";
+import { fetchMemberBadges, type MemberBadgePreview } from "@/lib/queries/memberBadges";
 
-type Tier = "green" | "silver" | "gold" | "platinum";
+type Tier = "member" | "green" | "bronze" | "silver" | "gold";
 
 type Membership = {
   is_member: boolean;
@@ -15,15 +16,34 @@ type Membership = {
   is_staff?: boolean | null;
   staff_label?: string | null;
   tier?: Tier | null;
+  classes_lifetime?: number | null;
   classes_12m?: number | null;
+  keep_target?: number | null;
   next_tier?: Tier | null;
   classes_to_next?: number | null;
+  dropped?: boolean | null;
+  restore_needed?: number | null;
+  keep_by?: string | null;
+  paused_until?: string | null;
 };
 
-/** Card finishes by reward tier, plus the team card for guides and staff. */
-const CARD_STYLE: Record<Tier | "staff", { card: string; chip: string; text: string; lightLogo: boolean }> = {
+/** Card finishes by reward tier, plus fancier cards for the team and the Director. */
+export type CardLook = { card: string; chip: string; text: string; lightLogo: boolean; pattern?: string; shimmer?: boolean };
+export const CARD_STYLE: Record<Tier | "staff" | "director", CardLook> = {
+  member: {
+    card: "bg-gradient-to-br from-[#f6f2ea] via-[#e6dece] to-[#c9bfa8]",
+    chip: "bg-black/10",
+    text: "text-[#2f3a2a]",
+    lightLogo: false,
+  },
   green: {
     card: "bg-gradient-to-br from-[#a3b693] via-[#7f9a6e] to-[#5f7a52]",
+    chip: "bg-white/20",
+    text: "text-white",
+    lightLogo: true,
+  },
+  bronze: {
+    card: "bg-gradient-to-br from-[#f0c9a0] via-[#b87333] to-[#6e4219]",
     chip: "bg-white/20",
     text: "text-white",
     lightLogo: true,
@@ -39,22 +59,55 @@ const CARD_STYLE: Record<Tier | "staff", { card: string; chip: string; text: str
     chip: "bg-black/10",
     text: "text-[#2b2205]",
     lightLogo: false,
-  },
-  platinum: {
-    card: "bg-gradient-to-br from-[#e9eef5] via-[#8a94a6] to-[#2e3440]",
-    chip: "bg-white/20",
-    text: "text-white",
-    lightLogo: true,
+    shimmer: true,
   },
   staff: {
-    card: "bg-gradient-to-br from-[#26331f] via-[#34452c] to-[#11170f] ring-1 ring-[#d4af37]/60",
+    card: "bg-gradient-to-br from-[#26331f] via-[#34452c] to-[#11170f] ring-1 ring-[#d4af37]/70",
     chip: "bg-[#d4af37]/25 text-[#f3dc8a]",
     text: "text-[#f5f1e6]",
     lightLogo: true,
+    pattern:
+      "repeating-linear-gradient(135deg, rgba(212,175,55,0.10) 0 1px, transparent 1px 14px)",
+    shimmer: true,
+  },
+  director: {
+    card: "bg-gradient-to-br from-[#1c1c1c] via-[#0a0a0a] to-[#2b2412] ring-2 ring-[#d4af37]",
+    chip: "bg-gradient-to-r from-[#f7e7a1] to-[#d4af37] text-[#1a1406]",
+    text: "text-[#f3dc8a]",
+    lightLogo: true,
+    pattern:
+      "radial-gradient(circle at 20% 15%, rgba(212,175,55,0.25), transparent 45%), repeating-linear-gradient(45deg, rgba(212,175,55,0.08) 0 1px, transparent 1px 10px), repeating-linear-gradient(-45deg, rgba(212,175,55,0.08) 0 1px, transparent 1px 10px)",
+    shimmer: true,
   },
 };
 
-const TIER_NAME: Record<Tier, string> = { green: "Green", silver: "Silver", gold: "Gold", platinum: "Platinum" };
+const TIER_NAME: Record<Tier, string> = {
+  member: "Member",
+  green: "Green",
+  bronze: "Bronze",
+  silver: "Silver",
+  gold: "Gold",
+};
+
+export const SHIMMER_CSS = `@keyframes ofCardShimmer{0%{transform:translateX(-120%) rotate(20deg)}60%,100%{transform:translateX(220%) rotate(20deg)}}
+@media (prefers-reduced-motion: reduce){.of-card-shimmer{display:none}}`;
+
+/** Badges sit on the card like stickers: slightly tilted, with a white die-cut edge. */
+const STICKER_TILT = ["-rotate-6", "rotate-3", "-rotate-2", "rotate-6", "-rotate-3", "rotate-2"];
+export function Sticker({ badge, i }: { badge: MemberBadgePreview; i: number }) {
+  return (
+    <span
+      title={badge.name}
+      className={cn(
+        "flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl shadow-md ring-2 ring-white",
+        STICKER_TILT[i % STICKER_TILT.length],
+      )}
+    >
+      {badge.icon}
+    </span>
+  );
+}
+
 type Perk = {
   id: string;
   title: string;
@@ -121,6 +174,7 @@ export function MembershipCard() {
   const [now, setNow] = useState(() => new Date());
   const [balances, setBalances] = useState<Balance[]>([]);
   const [gpVisits, setGpVisits] = useState<GreenPointVisit[]>([]);
+  const [stickers, setStickers] = useState<MemberBadgePreview[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +182,7 @@ export function MembershipCard() {
       const user = await getUser();
       if (!user) return;
       const nowIso = new Date().toISOString();
-      const [mRes, pRes, meRes, bRes, vRes] = await Promise.all([
+      const [mRes, pRes, meRes, bRes, vRes, badges] = await Promise.all([
         supabase.rpc("my_membership"),
         supabase
           .from("membership_perks")
@@ -155,6 +209,7 @@ export function MembershipCard() {
           .eq("profile_id", user.id)
           .order("used_at", { ascending: false })
           .limit(5),
+        fetchMemberBadges(user.id, 60),
       ]);
       if (cancelled) return;
       if (mRes.error) {
@@ -173,6 +228,7 @@ export function MembershipCard() {
         ),
       );
       setGpVisits((vRes.data ?? []) as GreenPointVisit[]);
+      setStickers(badges);
     })();
     return () => {
       cancelled = true;
@@ -188,10 +244,15 @@ export function MembershipCard() {
   if (!membership?.is_member) return null;
 
   const name = [person?.first_name, person?.last_name].filter(Boolean).join(" ") || "Member";
-  const tier: Tier = membership.tier ?? "green";
+  const tier: Tier = membership.tier ?? "member";
   const isStaff = membership.is_staff === true;
-  const style = CARD_STYLE[isStaff ? "staff" : tier];
-  const badge = isStaff ? (membership.staff_label ?? "Team") : `${TIER_NAME[tier]} member`;
+  const isDirector = isStaff && membership.staff_label === "Director";
+  const style = CARD_STYLE[isDirector ? "director" : isStaff ? "staff" : tier];
+  const badge = isStaff
+    ? (membership.staff_label ?? "Team")
+    : tier === "member"
+      ? "Member"
+      : `${TIER_NAME[tier]} member`;
   const creditBalances = balances.filter((b) => b.category !== "mat_towel");
   const bothStudios = creditBalances.some((b) => b.access_scope === "open_access");
   const initials = name
@@ -250,6 +311,21 @@ export function MembershipCard() {
                   style.text,
                 )}
               >
+                <style>{SHIMMER_CSS}</style>
+                {style.pattern ? (
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{ backgroundImage: style.pattern }}
+                    aria-hidden
+                  />
+                ) : null}
+                {style.shimmer ? (
+                  <div
+                    className="of-card-shimmer pointer-events-none absolute -inset-y-10 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/35 to-transparent"
+                    style={{ animation: "ofCardShimmer 5s ease-in-out infinite" }}
+                    aria-hidden
+                  />
+                ) : null}
                 <div
                   className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/20 blur-2xl"
                   aria-hidden
@@ -315,6 +391,13 @@ export function MembershipCard() {
                 <p className="text-center text-[11px] opacity-75">
                   Live card · {now.toLocaleDateString("en-ZA")}
                 </p>
+                {stickers.length > 0 ? (
+                  <div className="relative mt-4 flex flex-wrap justify-center gap-2" aria-label="Badges">
+                    {stickers.slice(0, 6).map((b, i) => (
+                      <Sticker key={b.id} badge={b} i={i} />
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
               {creditBalances.length > 0 ? (
@@ -358,17 +441,53 @@ export function MembershipCard() {
                 </div>
               ) : null}
 
-              <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3 text-sm">
-                <p className="font-semibold">
-                  {TIER_NAME[tier]} tier · {membership.classes_12m ?? 0} class
-                  {(membership.classes_12m ?? 0) === 1 ? "" : "es"} in the last 12 months
-                </p>
-                <p className="text-xs text-white/75">
-                  {membership.next_tier
-                    ? `${membership.classes_to_next ?? 0} more to reach ${TIER_NAME[membership.next_tier]}.`
-                    : "You've reached our top tier. Thank you!"}
-                </p>
-              </div>
+              {!isStaff ? (
+                <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3 text-sm">
+                  <p className="font-semibold">
+                    {tier === "member" ? "Member" : `${TIER_NAME[tier]} tier`} ·{" "}
+                    {membership.classes_lifetime ?? 0} classes with us
+                  </p>
+                  <p className="text-xs text-white/75">
+                    {membership.classes_12m ?? 0} in the last 12 months
+                    {membership.keep_target ? ` (${membership.keep_target} a year keeps your tier)` : ""}.
+                  </p>
+                  {membership.dropped ? (
+                    <p className="mt-2 text-xs text-[#f3dc8a]">
+                      Welcome back! {membership.restore_needed ?? 0} more class
+                      {(membership.restore_needed ?? 0) === 1 ? "" : "es"} to restore your tier.
+                    </p>
+                  ) : membership.paused_until ? (
+                    <p className="mt-2 text-xs text-white/75">
+                      Your tier is on hold until {formatDate(membership.paused_until)}.
+                    </p>
+                  ) : membership.keep_by && tier !== "member" ? (
+                    <p className="mt-2 text-xs text-white/75">
+                      Book a class by {formatDate(membership.keep_by)} to keep your tier.
+                    </p>
+                  ) : null}
+                  <p className="mt-2 text-xs text-white/75">
+                    {membership.next_tier
+                      ? `${membership.classes_to_next ?? 0} more to reach ${TIER_NAME[membership.next_tier]}.`
+                      : "You've reached our top tier. Thank you!"}
+                  </p>
+                </div>
+              ) : null}
+
+              {stickers.length > 0 ? (
+                <div className="mx-auto mt-4 w-full max-w-sm rounded-xl bg-white/10 px-4 py-3">
+                  <p className="mb-3 text-sm font-semibold uppercase tracking-wide text-white/80">
+                    Your stickers · {stickers.length}
+                  </p>
+                  <ul className="grid grid-cols-4 gap-3">
+                    {stickers.map((b, i) => (
+                      <li key={b.id} className="flex flex-col items-center gap-1 text-center">
+                        <Sticker badge={b} i={i} />
+                        <span className="text-[10px] leading-tight text-white/80">{b.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
               {perks.length > 0 ? (
                 <div className="mx-auto mt-6 w-full max-w-sm">
