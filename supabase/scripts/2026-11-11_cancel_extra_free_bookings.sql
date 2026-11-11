@@ -2,7 +2,7 @@
 -- earliest bookings, and sends each member an in-app message explaining why.
 -- Rules: one free On The Mat or Reformer class, one free Wellzone, max 2 free a day.
 with free_upcoming as (
-  select b.id, b.profile_id, b.created_at, c.title, c.starts_at,
+  select b.id, b.profile_id, b.created_at, c.name as title, c.starts_at,
          (c.starts_at at time zone 'Africa/Johannesburg')::date as day,
          case when coalesce(cat.parent_group, cat.name, c.class_type::text) in ('Wellzone', 'Events')
               then coalesce(cat.parent_group, cat.name) else 'Studio' end as bucket
