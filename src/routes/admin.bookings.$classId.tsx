@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { canSeeMemberPrivateDetails, effectiveRole } from "@/lib/roleAccess";
 import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
+import { isEarlyCancellation } from "@/lib/earlyCancellation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Undo2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -161,7 +162,7 @@ function BookingClassDetailPage() {
     const { data: bookingData, error: bookingErr } = await supabase
       .from("bookings")
       .select(
-        "id, status, profile_id, class_id, payment_method, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
       )
       .eq("class_id", classId)
       .order("created_at", { ascending: true });
@@ -178,6 +179,8 @@ function BookingClassDetailPage() {
     const raw = (bookingData ?? []) as Array<{
       id: string;
       status: string;
+      cancelled_at?: string | null;
+      late_cancel?: boolean | null;
       profile_id: string | null;
       class_id: string;
       payment_method: string | null;
@@ -203,6 +206,7 @@ function BookingClassDetailPage() {
       const ln = prof?.last_name?.trim() ?? "";
       const clsOne = one(r.classes);
       if (!clsOne?.starts_at) continue;
+      if (isEarlyCancellation({ ...r, starts_at: clsOne.starts_at })) continue;
       const st = String(r.status);
       const status = (
         ["confirmed", "attended", "cancelled", "no-show"].includes(st) ? st : "confirmed"

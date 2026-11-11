@@ -166,6 +166,14 @@ const LANDING_ORDER: readonly AdminArea[] = ["dashboard", "check-in", "bookings"
 
 /** First admin page this person may open, or null when they have none. */
 export function firstAdminPath(profile: RoleProfile | null | undefined): string | null {
+  // Guides land on Bookings (their classes for the day), not Check-In.
+  if (
+    hasRole(profile, "guide") &&
+    !canOpenAdminArea(profile, "dashboard") &&
+    canOpenAdminArea(profile, "bookings")
+  ) {
+    return adminPathForArea("bookings");
+  }
   const area = LANDING_ORDER.find((a) => canOpenAdminArea(profile, a));
   return area ? adminPathForArea(area) : null;
 }
