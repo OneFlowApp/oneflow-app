@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { isEarlyCancellation } from "@/lib/earlyCancellation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { STUDIO_ROOMS } from "@/lib/studioRooms";
 import {
@@ -78,6 +79,8 @@ type WeekClassRow = {
 type BookingRowRaw = {
   id: string;
   status: string;
+  cancelled_at?: string | null;
+  late_cancel?: boolean | null;
   profile_id: string | null;
   class_id: string;
   payment_method: string | null;
@@ -141,6 +144,7 @@ function normalizeBooking(
   const memberFull = fn || ln ? `${fn} ${ln}`.trim() : "Unknown member";
   const cls = one(raw.classes);
   if (!cls?.starts_at) return null;
+  if (isEarlyCancellation({ ...raw, starts_at: cls.starts_at })) return null;
   const st = String(raw.status);
   const status = (
     ["confirmed", "attended", "cancelled", "no-show"].includes(st) ? st : "confirmed"
@@ -187,19 +191,70 @@ function sessionMatchesClassTypeFilter(classType: string, filter: string): boole
   return c === filter.toLowerCase();
 }
 
+const SAVED_VIEW_KEY = "of-admin-bookings-view";
+
+type SavedView = {
+  day: Date | null;
+  query?: string;
+  sort?: string;
+  type?: string;
+  guide?: string;
+  location?: string;
+};
+
+/** The day and filters last used on the bookings list in the past hour. */
+function readSavedView(): SavedView | null {
+  try {
+    const raw = sessionStorage.getItem(SAVED_VIEW_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Omit<SavedView, "day"> & { day?: string; savedAt?: number };
+    // Only restore a recent view, so opening the app the next morning starts on today.
+    if (!v.savedAt || Date.now() - v.savedAt > 60 * 60 * 1000) return null;
+    const day = v.day ? new Date(v.day) : null;
+    return { ...v, day: day && !Number.isNaN(day.getTime()) ? day : null };
+  } catch {
+    return null;
+  }
+}
+
 function BookingsPage() {
   // Subscribe so a class-type rename repaints class titles and badges.
   useClassCatalog();
-  const [viewWeekStart, setViewWeekStart] = useState(() => startOfCalendarWeekSunday(new Date()));
-  const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
+  const saved = useMemo(readSavedView, []);
+  const [viewWeekStart, setViewWeekStart] = useState(() =>
+    saved?.day ? startOfCalendarWeekSunday(saved.day) : startOfCalendarWeekSunday(new Date()),
+  );
+  const [selectedDay, setSelectedDay] = useState(() => (saved?.day ? startOfDay(saved.day) : startOfDay(new Date())));
   const [weekClasses, setWeekClasses] = useState<WeekClassRow[]>([]);
   const [bookings, setBookings] = useState<AdminBookingRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
-  const [bookingsSort, setBookingsSort] = useState<BookingsSortKey>("class_time");
-  const [sessionTypeFilter, setSessionTypeFilter] = useState<string>("all");
-  const [sessionGuideFilter, setSessionGuideFilter] = useState<string>("all");
-  const [sessionLocationFilter, setSessionLocationFilter] = useState<string>("all");
+  const [query, setQuery] = useState(saved?.query ?? "");
+  const [bookingsSort, setBookingsSort] = useState<BookingsSortKey>(
+    (saved?.sort as BookingsSortKey | undefined) ?? "class_time",
+  );
+  const [sessionTypeFilter, setSessionTypeFilter] = useState<string>(saved?.type ?? "all");
+  const [sessionGuideFilter, setSessionGuideFilter] = useState<string>(saved?.guide ?? "all");
+  const [sessionLocationFilter, setSessionLocationFilter] = useState<string>(saved?.location ?? "all");
+
+  // Remember the day and filters, so "Back to day list" returns to the same view.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        SAVED_VIEW_KEY,
+        JSON.stringify({
+          day: selectedDay.toISOString(),
+          savedAt: Date.now(),
+          query,
+          sort: bookingsSort,
+          type: sessionTypeFilter,
+          guide: sessionGuideFilter,
+          location: sessionLocationFilter,
+        }),
+      );
+    } catch {
+      /* private mode: nothing to remember */
+    }
+  }, [selectedDay, query, bookingsSort, sessionTypeFilter, sessionGuideFilter, sessionLocationFilter]);
   const [walkInOpen, setWalkInOpen] = useState(false);
 
   const nowMs = useNowMs();
@@ -255,6 +310,8 @@ function BookingsPage() {
           `
         id,
         status,
+        cancelled_at,
+        late_cancel,
         profile_id,
         class_id,
         payment_method,
