@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { BadgeCheck, ChevronDown, Copy, ExternalLink, Star, X } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, Copy, ExternalLink, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
@@ -130,7 +130,7 @@ type Balance = {
 };
 type GreenPointVisit = { id: string; credit_id: string; used_at: string };
 
-/** Up to 20 credits show as dots (used ones crossed off); bigger packs show a count. */
+/** Up to 20 credits show as dots, used ones ticked off; bigger packs show a count. */
 function Tally({ total, left }: { total: number; left: number }) {
   if (total <= 0) return null;
   if (total > 20) return <span className="text-xs text-white/80">{left} of {total} left</span>;
@@ -140,10 +140,12 @@ function Tally({ total, left }: { total: number; left: number }) {
         <span
           key={i}
           className={cn(
-            "h-3 w-3 rounded-full border",
-            i < left ? "border-[#d4e3c8] bg-[#a3b693]" : "border-white/40 bg-transparent",
+            "flex h-4 w-4 items-center justify-center rounded-full border",
+            i < left ? "border-[#d4e3c8] bg-[#a3b693]" : "border-white/40 bg-white/10",
           )}
-        />
+        >
+          {i >= left ? <Check className="h-3 w-3 text-white/80" strokeWidth={3} aria-hidden /> : null}
+        </span>
       ))}
       <span className="ml-1 text-xs text-white/80">
         {left}/{total}
