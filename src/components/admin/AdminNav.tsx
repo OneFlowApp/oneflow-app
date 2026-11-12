@@ -20,6 +20,7 @@ import {
   Mail,
   Send,
   Settings,
+  Building2,
   Download,
 } from "lucide-react";
 import { canUseMemberApp, canOpenAdminPage, type RoleProfile } from "@/lib/roleAccess";
@@ -63,6 +64,7 @@ export const adminNavItems: AdminNavItem[] = [
   { to: "/admin/promotions", label: "Promo codes", icon: Megaphone },
   { to: "/admin/email", label: "Email", icon: Mail },
   { to: "/admin/client-comms", label: "Client Comms", icon: Send },
+  { to: "/admin/studios", label: "Studios", icon: Building2 },
   { to: "/admin/settings", label: "Settings", icon: Settings },
   { to: "/admin/install-app", label: "Install App", icon: Download },
 ];

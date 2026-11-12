@@ -34,6 +34,7 @@ import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-passw
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminWaiversRouteImport } from './routes/admin.waivers'
 import { Route as AdminTransactionsRouteImport } from './routes/admin.transactions'
+import { Route as AdminStudiosRouteImport } from './routes/admin.studios'
 import { Route as AdminStaffRouteImport } from './routes/admin.staff'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminSchedulingRouteImport } from './routes/admin.scheduling'
@@ -181,6 +182,11 @@ const AdminTransactionsRoute = AdminTransactionsRouteImport.update({
   path: '/transactions',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminStudiosRoute = AdminStudiosRouteImport.update({
+  id: '/studios',
+  path: '/studios',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminStaffRoute = AdminStaffRouteImport.update({
   id: '/staff',
   path: '/staff',
@@ -323,6 +329,7 @@ export interface FileRoutesByFullPath {
   '/admin/scheduling': typeof AdminSchedulingRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
+  '/admin/studios': typeof AdminStudiosRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -369,6 +376,7 @@ export interface FileRoutesByTo {
   '/admin/scheduling': typeof AdminSchedulingRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
+  '/admin/studios': typeof AdminStudiosRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -418,6 +426,7 @@ export interface FileRoutesById {
   '/admin/scheduling': typeof AdminSchedulingRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/staff': typeof AdminStaffRoute
+  '/admin/studios': typeof AdminStudiosRoute
   '/admin/transactions': typeof AdminTransactionsRoute
   '/admin/waivers': typeof AdminWaiversRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -468,6 +477,7 @@ export interface FileRouteTypes {
     | '/admin/scheduling'
     | '/admin/settings'
     | '/admin/staff'
+    | '/admin/studios'
     | '/admin/transactions'
     | '/admin/waivers'
     | '/auth/callback'
@@ -514,6 +524,7 @@ export interface FileRouteTypes {
     | '/admin/scheduling'
     | '/admin/settings'
     | '/admin/staff'
+    | '/admin/studios'
     | '/admin/transactions'
     | '/admin/waivers'
     | '/auth/callback'
@@ -562,6 +573,7 @@ export interface FileRouteTypes {
     | '/admin/scheduling'
     | '/admin/settings'
     | '/admin/staff'
+    | '/admin/studios'
     | '/admin/transactions'
     | '/admin/waivers'
     | '/auth/callback'
@@ -775,6 +787,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTransactionsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/studios': {
+      id: '/admin/studios'
+      path: '/studios'
+      fullPath: '/admin/studios'
+      preLoaderRoute: typeof AdminStudiosRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/staff': {
       id: '/admin/staff'
       path: '/staff'
@@ -970,6 +989,7 @@ interface AdminRouteChildren {
   AdminSchedulingRoute: typeof AdminSchedulingRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminStaffRoute: typeof AdminStaffRoute
+  AdminStudiosRoute: typeof AdminStudiosRoute
   AdminTransactionsRoute: typeof AdminTransactionsRoute
   AdminWaiversRoute: typeof AdminWaiversRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -994,6 +1014,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSchedulingRoute: AdminSchedulingRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminStaffRoute: AdminStaffRoute,
+  AdminStudiosRoute: AdminStudiosRoute,
   AdminTransactionsRoute: AdminTransactionsRoute,
   AdminWaiversRoute: AdminWaiversRoute,
   AdminIndexRoute: AdminIndexRoute,
