@@ -401,6 +401,65 @@ serve(async (req) => {
     });
   }
 
+  // Pause fee: the member asked to pause a pass (request_credit_pause made the pending pause).
+  if (raw?.type === "pause") {
+    const pauseId = String(raw.pause_id ?? "");
+    const pauseAuth = req.headers.get("Authorization") ?? "";
+    let pauseUserId: string | null = null;
+    if (pauseAuth.startsWith("Bearer ") && SUPABASE_ANON_KEY) {
+      const c = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: pauseAuth } } });
+      const { data: u } = await c.auth.getUser();
+      pauseUserId = u.user?.id ?? null;
+    }
+    const { data: pause } = await supabase
+      .from("credit_pauses")
+      .select("id, profile_id, product_name, starts_on, ends_on, weeks, fee_zar, status")
+      .eq("id", pauseId)
+      .maybeSingle();
+    if (!pause || !pauseUserId || pause.profile_id !== pauseUserId) {
+      return new Response(JSON.stringify({ error: "Please sign in to pause your pass." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const pauseCents = Math.round(Number(pause.fee_zar) * 100);
+    if (pause.status !== "pending_payment" || !(pauseCents > 0)) {
+      return new Response(JSON.stringify({ error: "This pause has nothing to pay." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: pauseProfile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", pauseUserId)
+      .maybeSingle();
+    const pauseBuyer = [pauseProfile?.first_name, pauseProfile?.last_name].filter(Boolean).join(" ") || "Member";
+    const pauseLabel = `Pause ${pause.product_name ?? "pass"} for ${pause.weeks} week${pause.weeks === 1 ? "" : "s"}`;
+    const pausePayload = {
+      amount: pauseCents,
+      currency: "ZAR",
+      lineItems: [{ displayName: pauseLabel, quantity: 1, pricingDetails: { price: pauseCents } }],
+      customer_reference: yocoCustomerReference(pauseBuyer),
+      customer_description: yocoCustomerDescription(pauseLabel),
+      description: `${pauseLabel} (${pause.starts_on} to ${pause.ends_on}) — ${pauseBuyer}`,
+      successUrl: String(raw.success_url ?? ""),
+      cancelUrl: String(raw.cancel_url ?? ""),
+      failureUrl: String(raw.cancel_url ?? ""),
+      metadata: { type: "pause", pause_id: pause.id, profile_id: pauseUserId, buyer_name: pauseBuyer },
+    };
+    const pauseRes = await fetch("https://payments.yoco.com/api/checkouts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${YOCO_SECRET}` },
+      body: JSON.stringify(pausePayload),
+    });
+    const pauseCheckout = await pauseRes.json();
+    console.log("yoco pause status:", pauseRes.status);
+    return new Response(JSON.stringify(pauseCheckout), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const { pack_id, profile_id, success_url, cancel_url } = raw;
   console.log("pack_id:", pack_id, "profile_id:", profile_id);
 

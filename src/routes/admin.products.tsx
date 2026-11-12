@@ -66,6 +66,7 @@ type ProductRow = {
   shower_towel_included: boolean;
   offer_with_product_ids: string[];
   is_continuous?: boolean;
+  can_pause?: boolean;
 };
 
 type AccessGroup = {
@@ -336,6 +337,7 @@ function ProductsPage() {
   const [showerTowelIncluded, setShowerTowelIncluded] = useState(false);
   /** Continuous Flow: lost for 12 months after a renewal gap of more than a day. */
   const [isContinuous, setIsContinuous] = useState(false);
+  const [canPause, setCanPause] = useState(false);
   /** Products whose purchase offers this product as a monthly add-on. Empty = not an add-on. */
   const [offerProductIds, setOfferProductIds] = useState<string[]>([]);
   const [allowanceItems, setAllowanceItems] = useState<AllowanceItem[]>(() => [newAllowanceItem()]);
@@ -350,7 +352,7 @@ function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids, is_continuous",
+        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids, is_continuous, can_pause",
       )
       .order("category", { ascending: true })
       .order("name", { ascending: true });
@@ -383,6 +385,7 @@ function ProductsPage() {
       mat_included: Boolean(raw.mat_included),
       shower_towel_included: Boolean(raw.shower_towel_included),
       is_continuous: raw.is_continuous === true,
+      can_pause: raw.can_pause === true,
       offer_with_product_ids: Array.isArray(raw.offer_with_product_ids)
         ? (raw.offer_with_product_ids as unknown[]).map(String)
         : [],
@@ -536,6 +539,7 @@ function ProductsPage() {
     setMatIncluded(d.matIncluded);
     setShowerTowelIncluded(d.showerTowelIncluded);
     setIsContinuous(false);
+    setCanPause(false);
     setOfferProductIds([]);
     setAllowanceItems([newAllowanceItem()]);
   }, []);
@@ -554,6 +558,7 @@ function ProductsPage() {
     setMatIncluded(p.mat_included);
     setShowerTowelIncluded(p.shower_towel_included);
     setIsContinuous(p.is_continuous === true);
+    setCanPause(p.can_pause === true);
     setOfferProductIds(p.offer_with_product_ids ?? []);
   }, []);
 
@@ -771,6 +776,7 @@ function ProductsPage() {
       mat_included: matIncluded,
       shower_towel_included: showerTowelIncluded,
       is_continuous: isContinuous,
+      can_pause: canPause && !isContinuous,
       offer_with_product_ids: offerProductIds,
     };
 
@@ -1294,6 +1300,26 @@ function ProductsPage() {
                   Members keep this price only by renewing with no gap of more than a day. After a
                   longer gap it&apos;s greyed out for them for 12 months. Renewals start when the
                   current one ends, and the app reminds them a day before.
+                </span>
+              </span>
+            </label>
+
+            <label
+              htmlFor="p-can-pause"
+              className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-muted/15 px-3 py-2.5"
+            >
+              <Checkbox
+                id="p-can-pause"
+                className="mt-0.5"
+                checked={canPause && !isContinuous}
+                disabled={isContinuous}
+                onCheckedChange={(c) => setCanPause(c === true)}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">Members can pause</span>
+                <span className="block text-xs text-muted-foreground">
+                  Members can pause this pass once, from Me → Passes, for the weeks and fee set in Settings.
+                  Not available on Continuous Flow.
                 </span>
               </span>
             </label>
