@@ -55,6 +55,10 @@ const SETTING_KEYS = [
   "pause_fee_zar",
   "pause_min_weeks",
   "pause_max_weeks",
+  "concession_discount_percent",
+  "concession_valid_months",
+  "concession_retry_months",
+  "concession_senior_age",
 ] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -86,6 +90,10 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   pause_fee_zar: "300",
   pause_min_weeks: "1",
   pause_max_weeks: "4",
+  concession_discount_percent: "10",
+  concession_valid_months: "6",
+  concession_retry_months: "6",
+  concession_senior_age: "65",
 };
 
 function csvEscape(s: string): string {
@@ -362,6 +370,15 @@ function SettingsPage() {
           { key: "pause_fee_zar" as SettingKey, label: "Pause fee (R)", type: "number" },
           { key: "pause_min_weeks" as SettingKey, label: "Shortest pause (weeks)", type: "number" },
           { key: "pause_max_weeks" as SettingKey, label: "Longest pause (weeks)", type: "number" },
+        ],
+      },
+      {
+        section: "Student & senior discount",
+        items: [
+          { key: "concession_discount_percent" as SettingKey, label: "Discount (%)", type: "number" },
+          { key: "concession_valid_months" as SettingKey, label: "Approval lasts (months)", type: "number" },
+          { key: "concession_retry_months" as SettingKey, label: "One check every (months)", type: "number" },
+          { key: "concession_senior_age" as SettingKey, label: "Senior from age", type: "number" },
         ],
       },
     ],
