@@ -3,7 +3,7 @@ import { DuplicateMembersSection } from "@/components/admin/DuplicateMembersSect
 import { DeletedMembersSection } from "@/components/admin/DeletedMembersSection";
 import { effectiveRole } from "@/lib/roleAccess";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Filter, Loader2, Mail, MessageSquare, Package, Plus, Search, X } from "lucide-react";
+import { Filter, Loader2, Mail, MessageSquare, Package, Plus, Search, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   currentPlanLabel,
@@ -180,6 +180,7 @@ type MemberRow = {
   hasBooking: boolean;
   joinedAt: string | null;
   isReturningLegacy: boolean;
+  bothStudios: boolean;
 };
 
 /** Responsive admin customers table — mobile: Name, Plan, Credits, Actions (+ checkbox). */
@@ -311,6 +312,7 @@ function CustomersPage() {
   const [chipNeverBooked, setChipNeverBooked] = useState(false);
   const [chipWaiverUnsigned, setChipWaiverUnsigned] = useState(false);
   const [chipJoinedMonth, setChipJoinedMonth] = useState(false);
+  const [chipBothStudios, setChipBothStudios] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -436,6 +438,15 @@ function CustomersPage() {
 
     const creditsByProfile = new Map<string, EmbeddedCreditRow[]>();
     const bookedIds = new Set<string>();
+    const bothStudioIds = new Set<string>();
+    {
+      const { data: multi, error: multiErr } = await supabase.rpc("multi_studio_member_ids");
+      if (multiErr) console.warn("customers: studio access", multiErr.message);
+      for (const v of (multi ?? []) as unknown[]) {
+        const id = typeof v === "string" ? v : (v as { multi_studio_member_ids?: string })?.multi_studio_member_ids;
+        if (id) bothStudioIds.add(String(id));
+      }
+    }
 
     if (ids.length > 0) {
       const [{ data: bookingRows }, { data: creditRows, error: creditsErr }] = await Promise.all([
@@ -502,6 +513,7 @@ function CustomersPage() {
         hasBooking: bookedIds.has(id),
         joinedAt: (p.created_at as string | null | undefined) ?? null,
         isReturningLegacy: legacyClaimedProfileIds.has(id),
+        bothStudios: bothStudioIds.has(id),
       };
     });
 
@@ -519,7 +531,8 @@ function CustomersPage() {
     Number(chipNoCredits) +
     Number(chipNeverBooked) +
     Number(chipWaiverUnsigned) +
-    Number(chipJoinedMonth);
+    Number(chipJoinedMonth) +
+    Number(chipBothStudios);
 
   const clearChipFilters = () => {
     setChipHasCredits(false);
@@ -527,6 +540,7 @@ function CustomersPage() {
     setChipNeverBooked(false);
     setChipWaiverUnsigned(false);
     setChipJoinedMonth(false);
+    setChipBothStudios(false);
   };
 
   const filtered = useMemo(() => {
@@ -547,6 +561,7 @@ function CustomersPage() {
       if (chipNoCredits && m.hasActiveCredits) return false;
       if (chipNeverBooked && m.hasBooking) return false;
       if (chipWaiverUnsigned && m.waiverSigned) return false;
+      if (chipBothStudios && !m.bothStudios) return false;
       if (
         chipJoinedMonth &&
         (!m.joinedAt || yearMonthKeyJhb(m.joinedAt) !== yearMonthKeyJhb(new Date().toISOString()))
@@ -563,6 +578,7 @@ function CustomersPage() {
     chipNeverBooked,
     chipWaiverUnsigned,
     chipJoinedMonth,
+    chipBothStudios,
     roleFilter,
   ]);
 
@@ -1176,6 +1192,11 @@ function CustomersPage() {
                 () => setChipWaiverUnsigned((v) => !v),
               ] as const,
               ["Joined this month", chipJoinedMonth, () => setChipJoinedMonth((v) => !v)] as const,
+              [
+                "Longkloof & Green Point",
+                chipBothStudios,
+                () => setChipBothStudios((v) => !v),
+              ] as const,
             ] as const
           ).map(([label, on, toggle]) => (
             <button
@@ -1283,6 +1304,15 @@ function CustomersPage() {
                     <td className={CUSTOMERS_COL.nameTd}>
                       <span className="flex min-w-0 flex-wrap items-center gap-1.5">
                         <span className="truncate font-semibold text-foreground">{m.name}</span>
+                        {m.bothStudios ? (
+                          <span
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#d4af37]/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#6b5410]"
+                            title="Has a pack for Longkloof & Green Point"
+                          >
+                            <Star className="h-3 w-3 fill-current" aria-hidden />
+                            Both studios
+                          </span>
+                        ) : null}
                         {m.isReturningLegacy ? (
                           <span className="shrink-0 rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
                             Returning member
