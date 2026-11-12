@@ -636,8 +636,36 @@ serve(async (req) => {
     }
   }
 
+  // Student / senior discount: only with an approved, current check, and not together with a promo code.
+  let concessionDiscountCents = 0;
+  let concessionKind: string | null = null;
+  if (raw?.concession === true && !promoApplied && Number.isFinite(baseAmountCents)) {
+    const todayJhb = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+    const { data: cc } = await supabase
+      .from("concession_checks")
+      .select("kind, valid_until")
+      .eq("profile_id", String(profile_id))
+      .eq("result", "approved")
+      .is("revoked_at", null)
+      .gte("valid_until", todayJhb)
+      .order("valid_until", { ascending: false })
+      .limit(1);
+    const approved = (cc ?? [])[0] as { kind: string } | undefined;
+    if (approved && authedUserId === String(profile_id)) {
+      const { data: pctRow } = await supabase
+        .from("studio_settings")
+        .select("value")
+        .eq("key", "concession_discount_percent")
+        .maybeSingle();
+      const pctRaw = Number((pctRow as { value?: string } | null)?.value);
+      const pct = Number.isFinite(pctRaw) && pctRaw > 0 && pctRaw < 100 ? pctRaw : 10;
+      concessionDiscountCents = Math.round((baseAmountCents * pct) / 100);
+      concessionKind = approved.kind;
+    }
+  }
+
   const afterPromoCents = Number.isFinite(baseAmountCents)
-    ? Math.max(0, baseAmountCents - promoDiscountCents)
+    ? Math.max(0, baseAmountCents - promoDiscountCents - concessionDiscountCents)
     : NaN;
 
   let flowDiscountCents = 0;
@@ -714,7 +742,7 @@ serve(async (req) => {
     pricingDetails: { price: number };
   }> = [
     {
-      displayName: `${packName} — ${buyerName}`,
+      displayName: `${packName}${concessionKind ? ` (${concessionKind} discount)` : ""} — ${buyerName}`,
       quantity: 1,
       pricingDetails: { price: packLinePriceCents },
     },
@@ -791,6 +819,8 @@ serve(async (req) => {
       amount_paid_zar: Number.isFinite(packPayableCents) ? Math.round(packPayableCents) / 100 : null,
       promo_code_applied: promoApplied?.code ?? null,
       promo_discount_zar: promoDiscountCents > 0 ? Math.round(promoDiscountCents / 100) : 0,
+      concession_kind: concessionKind,
+      concession_discount_zar: concessionDiscountCents > 0 ? Math.round(concessionDiscountCents) / 100 : 0,
       flow_points_used: flowPointsUsed > 0 ? flowPointsUsed : 0,
       flow_points_discount_zar:
         flowDiscountCents > 0 ? Math.round((flowDiscountCents / 100) * 100) / 100 : 0,
