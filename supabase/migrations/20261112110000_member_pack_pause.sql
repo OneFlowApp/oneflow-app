@@ -13,6 +13,20 @@ insert into public.studio_settings (key, value) values
   ('pause_max_weeks', '4')
 on conflict (key) do nothing;
 
+-- An older, empty credit_pauses table (pause_start, is_medical, ...) was made outside the app and is unused.
+-- Replace it, but only while it is empty, so no record can ever be lost.
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'credit_pauses' and column_name = 'pause_start') then
+    if (select count(*) from public.credit_pauses) = 0 then
+      drop table public.credit_pauses;
+    else
+      raise exception 'The old credit_pauses table has rows. Stop and check with Claude before going on.';
+    end if;
+  end if;
+end $$;
+
 create table if not exists public.credit_pauses (
   id uuid primary key default gen_random_uuid(),
   profile_id uuid not null references public.profiles(id) on delete cascade,
