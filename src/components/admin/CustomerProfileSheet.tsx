@@ -3,6 +3,7 @@ import { DeleteMemberSection } from "@/components/admin/DeleteMemberSection";
 import { ConversationThread } from "@/components/ConversationThread";
 import { ContinuousFlowSection } from "@/components/admin/ContinuousFlowSection";
 import { TierSection } from "@/components/admin/TierSection";
+import { PauseSection } from "@/components/admin/PauseSection";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -1161,6 +1162,11 @@ export function CustomerProfileSheet({
               <TierSection
                 profileId={profile.id}
                 canPause={["director", "management"].includes(String(viewerRole ?? ""))}
+              />
+
+              <PauseSection
+                profileId={profile.id}
+                canUndo={["director", "management"].includes(String(viewerRole ?? ""))}
               />
 
               <section className="border-t border-border pt-6">

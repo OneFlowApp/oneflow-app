@@ -52,6 +52,9 @@ const SETTING_KEYS = [
   "tier_gold_keep",
   "tier_inactive_days",
   "tier_restore_classes",
+  "pause_fee_zar",
+  "pause_min_weeks",
+  "pause_max_weeks",
 ] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -80,6 +83,9 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   tier_gold_keep: "100",
   tier_inactive_days: "60",
   tier_restore_classes: "4",
+  pause_fee_zar: "300",
+  pause_min_weeks: "1",
+  pause_max_weeks: "4",
 };
 
 function csvEscape(s: string): string {
@@ -348,6 +354,14 @@ function SettingsPage() {
             label: "Classes after coming back to restore the tier",
             type: "number",
           },
+        ],
+      },
+      {
+        section: "Pausing a pass",
+        items: [
+          { key: "pause_fee_zar" as SettingKey, label: "Pause fee (R)", type: "number" },
+          { key: "pause_min_weeks" as SettingKey, label: "Shortest pause (weeks)", type: "number" },
+          { key: "pause_max_weeks" as SettingKey, label: "Longest pause (weeks)", type: "number" },
         ],
       },
     ],

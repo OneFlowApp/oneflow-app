@@ -118,6 +118,33 @@ function escapeHtml(v: unknown): string {
 
 const OPEN_ACCESS_NOTIFY_EMAIL = "deeds@oneflow.co.za";
 
+/** A short email to the studio inbox (used for pauses). */
+async function notifyStudio(subjectStart: string, details: Record<string, unknown>) {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  if (!apiKey) {
+    console.error("yoco-webhook: RESEND_API_KEY not set, studio email not sent", details);
+    return;
+  }
+  const rows = Object.entries(details)
+    .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#555">${escapeHtml(k)}</td><td style="padding:4px 0"><b>${escapeHtml(v)}</b></td></tr>`)
+    .join("");
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: "One Flow <noreply@oneflow.co.za>",
+        to: [OPEN_ACCESS_NOTIFY_EMAIL],
+        subject: `${subjectStart}: ${details["Member"] ?? ""} (${details["Pass"] ?? ""})`,
+        html: `<p>${escapeHtml(subjectStart)} in the One Flow app.</p><table>${rows}</table>`,
+      }),
+    });
+    if (!res.ok) console.error("yoco-webhook: studio email failed", res.status, await res.text());
+  } catch (e) {
+    console.error("yoco-webhook: studio email error", e);
+  }
+}
+
 async function notifyOpenAccessPurchase(details: any) {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   if (!apiKey) {
@@ -290,6 +317,44 @@ serve(async (req) => {
     if (feeErr) {
       console.error("yoco-webhook: settle fees failed", feeErr);
       return new Response("settle failed", { status: 500 });
+    }
+    return new Response("ok", { status: 200 });
+  }
+
+  // Pause fee paid: switch the pause on and let the studio know.
+  if (paymentType === "pause") {
+    const pauseId = String(metadata.pause_id ?? "").trim();
+    const pausePaymentId = String(payload.id ?? "").trim();
+    if (!pauseId || !pausePaymentId) return new Response("ok", { status: 200 });
+    const { error: pauseErr } = await supabase.rpc("activate_credit_pause", {
+      p_pause_id: pauseId,
+      p_payment_id: pausePaymentId,
+    });
+    if (pauseErr) {
+      console.error("yoco-webhook: activate pause failed", pauseErr);
+      return new Response("pause failed", { status: 500 });
+    }
+    const { data: pz } = await supabase
+      .from("credit_pauses")
+      .select("status, product_name, starts_on, ends_on, weeks, fee_zar, profile_id")
+      .eq("id", pauseId)
+      .maybeSingle();
+    if (pz && (pz as any).status === "active") {
+      const { data: who } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, email, phone")
+        .eq("id", (pz as any).profile_id)
+        .maybeSingle();
+      const w: any = who ?? {};
+      await notifyStudio("Pass paused", {
+        "Member": [w.first_name, w.last_name].filter(Boolean).join(" ") || "Unknown",
+        "Email": w.email ?? "",
+        "Phone": w.phone ?? "",
+        "Pass": (pz as any).product_name ?? "",
+        "Paused": `${(pz as any).starts_on} to ${(pz as any).ends_on} (${(pz as any).weeks} week${(pz as any).weeks === 1 ? "" : "s"})`,
+        "Fee paid": `R${Number((pz as any).fee_zar).toFixed(2)}`,
+        "Yoco payment": pausePaymentId,
+      });
     }
     return new Response("ok", { status: 200 });
   }

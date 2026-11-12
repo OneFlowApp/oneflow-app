@@ -1,7 +1,17 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Ticket } from "lucide-react";
+import { Loader2, PauseCircle, Ticket } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { formatStudioDateShort } from "@/lib/timezone";
 
 type CreditRow = {
@@ -17,10 +27,27 @@ type CreditRow = {
   mat_access?: boolean | null;
   towel_access?: boolean | null;
   product:
-    | { name: string | null; is_staff_only?: boolean | null }
-    | { name: string | null; is_staff_only?: boolean | null }[]
+    | ProductJoin
+    | ProductJoin[]
     | null;
 };
+
+type ProductJoin = {
+  name: string | null;
+  is_staff_only?: boolean | null;
+  can_pause?: boolean | null;
+  is_continuous?: boolean | null;
+};
+
+type PauseRow = {
+  id: string;
+  credit_id: string;
+  starts_on: string;
+  ends_on: string;
+  status: string;
+};
+
+type PauseRules = { fee: number; minWeeks: number; maxWeeks: number };
 
 type PassPart = { id: string; label: string; unlimited: boolean; remaining: number };
 
@@ -30,6 +57,8 @@ type Pass = {
   expiresAt: string | null;
   openAccess: boolean;
   matAndTowel: boolean;
+  canPause: boolean;
+  pause: PauseRow | null;
   parts: PassPart[];
 };
 
@@ -69,6 +98,8 @@ function groupPasses(rows: CreditRow[], nowMs: number): Pass[] {
         expiresAt: r.expires_at,
         openAccess: r.access_scope === "open_access",
         matAndTowel: false,
+        canPause: Boolean(prod?.can_pause) && !prod?.is_continuous,
+        pause: null,
         parts: [],
       };
       byKey.set(key, pass);
@@ -89,35 +120,77 @@ function groupPasses(rows: CreditRow[], nowMs: number): Pass[] {
 }
 
 /** "Your passes": each active pack by its real name, with what is left on each part. */
+function ymd(d: Date) {
+  return d.toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+}
+
+function niceDate(iso: string) {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
+function addDaysIso(iso: string, days: number) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  return ymd(d);
+}
+
 export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
   const [passes, setPasses] = useState<Pass[] | null>(null);
+  const [rules, setRules] = useState<PauseRules>({ fee: 300, minWeeks: 1, maxWeeks: 4 });
+  const [pausing, setPausing] = useState<Pass | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const user = await getUser();
-      if (!user) {
-        if (!cancelled) setPasses([]);
-        return;
-      }
-      const { data, error } = await supabase
+  const load = useCallback(async () => {
+    const user = await getUser();
+    if (!user) {
+      setPasses([]);
+      return;
+    }
+    const [{ data, error }, { data: pz }, { data: st }] = await Promise.all([
+      supabase
         .from("user_credits")
         .select(
-          "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, purchased_at, refunded_at, access_scope, mat_access, towel_access, product:product_id ( name, is_staff_only )",
+          "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, purchased_at, refunded_at, access_scope, mat_access, towel_access, product:product_id ( name, is_staff_only, can_pause, is_continuous )",
         )
-        .eq("profile_id", user.id);
-      if (cancelled) return;
-      if (error) {
-        console.error("passes", error);
-        setPasses([]);
-        return;
-      }
-      setPasses(groupPasses((data ?? []) as CreditRow[], Date.now()));
-    })();
-    return () => {
-      cancelled = true;
-    };
+        .eq("profile_id", user.id),
+      supabase
+        .from("credit_pauses")
+        .select("id, credit_id, starts_on, ends_on, status")
+        .eq("profile_id", user.id)
+        .eq("status", "active"),
+      supabase.from("studio_settings").select("key, value").like("key", "pause_%"),
+    ]);
+    if (error) {
+      console.error("passes", error);
+      setPasses([]);
+      return;
+    }
+    const grouped = groupPasses((data ?? []) as CreditRow[], Date.now());
+    const pauses = (pz ?? []) as PauseRow[];
+    for (const p of grouped) {
+      p.pause = pauses.find((x) => p.parts.some((part) => part.id === x.credit_id)) ?? null;
+    }
+    setPasses(grouped);
+    const v = Object.fromEntries(((st ?? []) as { key: string; value: string }[]).map((r) => [r.key, Number(r.value)]));
+    setRules({
+      fee: Number.isFinite(v.pause_fee_zar) ? v.pause_fee_zar : 300,
+      minWeeks: v.pause_min_weeks > 0 ? v.pause_min_weeks : 1,
+      maxWeeks: v.pause_max_weeks > 0 ? v.pause_max_weeks : 4,
+    });
   }, []);
+
+  useEffect(() => {
+    void load();
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("pause_paid") === "1") {
+        toast.success("Payment received. Your pass is paused.");
+        url.searchParams.delete("pause_paid");
+        window.history.replaceState(null, "", url.toString());
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [load]);
 
   return (
     <div className={compact ? "space-y-2" : "rounded-2xl border border-border bg-card px-5 py-5"}>
@@ -162,6 +235,11 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
                   </li>
                 ))}
               </ul>
+              {p.pause ? (
+                <p className="mt-1.5 text-xs font-medium text-[#4a6b3c]">
+                  Paused {niceDate(p.pause.starts_on)} to {niceDate(p.pause.ends_on)}
+                </p>
+              ) : null}
               {p.openAccess || p.matAndTowel ? (
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                   {p.openAccess ? (
@@ -176,10 +254,150 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
                   ) : null}
                 </div>
               ) : null}
+              {p.canPause && !p.pause && p.expiresAt ? (
+                <button
+                  type="button"
+                  onClick={() => setPausing(p)}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground transition-opacity active:opacity-70"
+                >
+                  <PauseCircle className="h-3.5 w-3.5" aria-hidden />
+                  Pause this pass
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
       )}
+      <PauseDialog pass={pausing} rules={rules} onClose={() => setPausing(null)} />
     </div>
+  );
+}
+
+function PauseDialog({ pass, rules, onClose }: { pass: Pass | null; rules: PauseRules; onClose: () => void }) {
+  const today = ymd(new Date());
+  const [start, setStart] = useState(today);
+  const [weeks, setWeeks] = useState(rules.minWeeks);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (pass) {
+      setStart(addDaysIso(today, 1));
+      setWeeks(rules.minWeeks);
+    }
+  }, [pass, today, rules.minWeeks]);
+
+  if (!pass) return null;
+  const end = addDaysIso(start, weeks * 7 - 1);
+  const newExpiry = pass.expiresAt ? new Date(new Date(pass.expiresAt).getTime() + weeks * 7 * 86_400_000) : null;
+  const options = Array.from({ length: rules.maxWeeks - rules.minWeeks + 1 }, (_, i) => rules.minWeeks + i);
+  const lastStart = pass.expiresAt ? ymd(new Date(pass.expiresAt)) : undefined;
+
+  const confirm = async () => {
+    setBusy(true);
+    const { data, error } = await supabase.rpc("request_credit_pause", {
+      p_credit_id: pass.parts[0].id,
+      p_starts_on: start,
+      p_weeks: weeks,
+    });
+    if (error) {
+      setBusy(false);
+      toast.error(supabaseErrorMessage(error, "Could not pause this pass"));
+      return;
+    }
+    const row = (Array.isArray(data) ? data[0] : data) as { pause_id: string; fee_zar: number } | null;
+    if (!row) {
+      setBusy(false);
+      toast.error("Could not pause this pass");
+      return;
+    }
+    if (!(Number(row.fee_zar) > 0)) {
+      setBusy(false);
+      toast.success("Your pass is paused");
+      onClose();
+      window.location.reload();
+      return;
+    }
+    const origin = window.location.origin;
+    const { data: checkout, error: payErr } = await supabase.functions.invoke("yoco-checkout", {
+      body: {
+        type: "pause",
+        pause_id: row.pause_id,
+        success_url: `${origin}/me?pause_paid=1`,
+        cancel_url: `${origin}/me`,
+      },
+    });
+    const redirect =
+      (checkout as { redirectUrl?: string; redirect_url?: string } | null)?.redirectUrl ??
+      (checkout as { redirect_url?: string } | null)?.redirect_url;
+    if (payErr || !redirect) {
+      setBusy(false);
+      toast.error(payErr?.message ?? "Could not start payment");
+      return;
+    }
+    window.location.href = redirect;
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Pause {pass.name}</DialogTitle>
+          <DialogDescription>
+            Pause for {rules.minWeeks} to {rules.maxWeeks} weeks, once per pass. Your end date moves out by the weeks
+            you pause.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <label className="block text-sm font-medium">
+            Start date
+            <input
+              type="date"
+              value={start}
+              min={today}
+              max={lastStart}
+              onChange={(e) => setStart(e.target.value || today)}
+              className="mt-1 block h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            />
+          </label>
+          <div>
+            <p className="text-sm font-medium">How long</p>
+            <div className="mt-1 grid grid-cols-4 gap-2">
+              {options.map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setWeeks(w)}
+                  className={
+                    w === weeks
+                      ? "rounded-md border-2 border-[#a3b693] bg-[#a3b693]/15 py-2 text-sm font-semibold"
+                      : "rounded-md border border-border py-2 text-sm"
+                  }
+                >
+                  {w} wk{w === 1 ? "" : "s"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-3 text-sm">
+            <p>
+              Paused <span className="font-semibold">{niceDate(start)}</span> to{" "}
+              <span className="font-semibold">{niceDate(end)}</span>
+            </p>
+            {newExpiry ? (
+              <p className="text-muted-foreground">
+                Your pass then ends {formatStudioDateShort(newExpiry.toISOString(), { year: true })}
+              </p>
+            ) : null}
+            <p className="mt-1 text-xs text-muted-foreground">
+              Classes booked with this pass in those dates need to be cancelled first.
+            </p>
+          </div>
+          <Button type="button" className="w-full" disabled={busy} onClick={() => void confirm()}>
+            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden /> : null}
+            {rules.fee > 0 ? `Pay R${rules.fee} and pause` : "Pause my pass"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
