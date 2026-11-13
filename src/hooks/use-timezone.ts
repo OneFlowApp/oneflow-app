@@ -11,7 +11,8 @@ export function useTimezone() {
     return resolveDisplayTimezone(null);
   }, []);
 
-  const timeZone = resolveDisplayTimezone(profile?.timezone ?? null);
+  // Classes happen in Cape Town, so members always see studio time, whatever their phone is set to.
+  const timeZone = STUDIO_TIMEZONE;
   const studioTimeZone = STUDIO_TIMEZONE;
   const usesStudioTime = timeZone === studioTimeZone;
 

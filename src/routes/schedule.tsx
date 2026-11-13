@@ -370,9 +370,14 @@ export default function SchedulePage() {
   }, [authReady, user?.id, search.class, navigate, studioTimeZone]);
 
   useEffect(() => {
-    if (!pendingOpenClassId || loading || revalidating || !user?.id) return;
+    if (!pendingOpenClassId || !user?.id) return;
+    // Wait until the class's own day has finished loading. While the day changes, the list still
+    // holds the previous day's classes, and checking it then wrongly said "isn't on this day's list".
+    const dayRows = dayClassesQuery.data;
+    if (!dayRows || dayClassesQuery.isFetching || dayClassesQuery.isPlaceholderData) return;
 
-    const row = classes.find((c) => c.id === pendingOpenClassId);
+    const raw = dayRows.find((c) => c.id === pendingOpenClassId);
+    const row = raw ? { ...raw, guide_name: guideNameFromRow(raw.guide_name) } : undefined;
     if (row) {
       if (isPastScheduleClass(row.starts_at)) {
         toast.error("This class has already passed — you can’t book it.");
@@ -392,7 +397,14 @@ export default function SchedulePage() {
         duration: 6000,
       },
     );
-  }, [pendingOpenClassId, loading, revalidating, classes, navigate, user?.id]);
+  }, [
+    pendingOpenClassId,
+    dayClassesQuery.data,
+    dayClassesQuery.isFetching,
+    dayClassesQuery.isPlaceholderData,
+    navigate,
+    user?.id,
+  ]);
 
   const weekSundayKey = useMemo(
     () => weekSundayDateKey(selectedDateKey, studioTimeZone),
