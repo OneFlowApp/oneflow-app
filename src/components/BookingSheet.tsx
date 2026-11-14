@@ -141,6 +141,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [isComplimentaryClass, setIsComplimentaryClass] = useState(false);
   const [challengeConfig, setChallengeConfig] =
     useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
+  const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
   const [classTicketProduct, setClassTicketProduct] = useState<{
     id: string;
     name: string;
@@ -430,6 +431,50 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
     setLoading(false);
     onBookingConfirmed?.(session.id);
     onOpenChange(false);
+  };
+
+  /** Buy a pack that covers this class, then come back and book it automatically. */
+  const buyPackAndBook = async (packId: string) => {
+    if (!userId || !session) return;
+    if (classIsPast) {
+      toast.error("This class has already passed — you can’t book it.");
+      return;
+    }
+    setBuyingPackId(packId);
+    const origin = window.location.origin;
+    const successQs = new URLSearchParams({
+      pack_id: packId,
+      profile_id: userId,
+      class_id: session.id,
+      auto_book: "1",
+    });
+    const { data: checkout, error: yocoErr } = await supabase.functions.invoke("yoco-checkout", {
+      body: {
+        pack_id: packId,
+        profile_id: userId,
+        class_id: session.id,
+        success_url: `${origin}/payment/success?${successQs.toString()}`,
+        cancel_url: `${origin}/schedule?class=${session.id}`,
+      },
+    });
+    const redirect =
+      (checkout as { redirectUrl?: string; redirect_url?: string } | null)?.redirectUrl ??
+      (checkout as { redirect_url?: string } | null)?.redirect_url ??
+      null;
+    if (yocoErr || !redirect) {
+      setBuyingPackId(null);
+      let message = yocoErr?.message ?? "Checkout failed";
+      try {
+        const ctx = (yocoErr as { context?: Response } | null)?.context;
+        const j = ctx ? await ctx.json() : null;
+        if (j?.error) message = String(j.error);
+      } catch {
+        /* keep message */
+      }
+      toast.error(message);
+      return;
+    }
+    window.location.href = redirect;
   };
 
   const buyClassTicketAndBook = async () => {
@@ -817,11 +862,53 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
             ) : null}
 
             {!isComplimentaryClass && credits.length === 0 && !isPaidClassTicket && !isFreeClass ? (
-              <div className="mt-6 rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
-                No eligible credits for this class.{" "}
-                <Link to="/pricing" className="text-primary underline">
-                  Buy a pass
-                </Link>
+              <div className="mt-6">
+                {(sheetData?.buyOptions ?? []).length > 0 ? (
+                  <>
+                    <p className="text-sm font-semibold">Buy a pass for this class:</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Pay, and you're booked into this class straight away.
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {(sheetData?.buyOptions ?? []).map((o) => {
+                        const showMember =
+                          o.member_price_zar != null && o.member_price_zar > 0 && o.member_price_zar < o.price_zar;
+                        return (
+                          <button
+                            key={o.id}
+                            type="button"
+                            disabled={buyingPackId !== null}
+                            onClick={() => void buyPackAndBook(o.id)}
+                            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left text-sm transition-colors hover:border-[#a3b693] disabled:opacity-60"
+                          >
+                            <span className="min-w-0">
+                              <span className="block font-medium">{o.name}</span>
+                              {showMember ? (
+                                <span className="block text-xs text-muted-foreground">
+                                  Members {formatTicketPriceLabel(o.member_price_zar!)}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="flex shrink-0 items-center gap-2 font-semibold">
+                              {buyingPackId === o.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                              {formatTicketPriceLabel(o.price_zar)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <Link to="/pricing" className="mt-3 block text-center text-xs text-muted-foreground underline">
+                      See all passes
+                    </Link>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
+                    No eligible credits for this class.{" "}
+                    <Link to="/pricing" className="text-primary underline">
+                      Buy a pass
+                    </Link>
+                  </div>
+                )}
               </div>
             ) : null}
 
