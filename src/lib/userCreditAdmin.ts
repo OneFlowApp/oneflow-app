@@ -67,7 +67,7 @@ export const UNLIMITED_CREDIT_DISPLAY = 999;
 
 /** Columns loaded for admin profile credit management. */
 export const USER_CREDIT_ADMIN_SELECT =
-  "id, product_id, product_name, category, credits_remaining, credits_total, is_unlimited, expires_at, mat_access, towel_access, yoco_payment_id, created_at";
+  "id, product_id, product_name, category, credits_remaining, credits_total, is_unlimited, expires_at, mat_access, towel_access, yoco_payment_id, created_at, access_scope";
 
 export type AdminCreditRow = {
   id: string;
@@ -82,6 +82,7 @@ export type AdminCreditRow = {
   towel_access?: boolean | null;
   yoco_payment_id?: string | null;
   created_at?: string | null;
+  access_scope?: string | null;
 };
 
 export type CreditBundleDisplayGroup = {

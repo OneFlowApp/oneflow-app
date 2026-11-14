@@ -4,6 +4,7 @@ import { ConversationThread } from "@/components/ConversationThread";
 import { ContinuousFlowSection } from "@/components/admin/ContinuousFlowSection";
 import { TierSection } from "@/components/admin/TierSection";
 import { PauseSection } from "@/components/admin/PauseSection";
+import { UpgradeAccessDialog } from "@/components/admin/UpgradeAccessDialog";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
 import {
   Calendar,
@@ -225,6 +226,7 @@ export function CustomerProfileSheet({
   const [sendEmailOpen, setSendEmailOpen] = useState(false);
 
   const [removeCreditId, setRemoveCreditId] = useState<string | null>(null);
+  const [upgradeCredit, setUpgradeCredit] = useState<{ id: string; title: string } | null>(null);
   const [removingCredit, setRemovingCredit] = useState(false);
 
   const [editCredit, setEditCredit] = useState<CreditRow | null>(null);
@@ -773,6 +775,22 @@ export function CustomerProfileSheet({
             <Pencil className="h-3 w-3 shrink-0" aria-hidden />
             Edit
           </Button>
+          {opts?.nested ? null : c.access_scope === "open_access" ? (
+            <span className="rounded-full bg-[#d4af37]/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#6b5410]">
+              Both studios
+            </span>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs"
+              disabled={!canManage}
+              onClick={() => setUpgradeCredit({ id: c.id, title: c.product_name ?? "pack" })}
+            >
+              Upgrade
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -1107,6 +1125,22 @@ export function CustomerProfileSheet({
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2">
                             <p className="font-display text-sm font-semibold">{group.title}</p>
+                            {group.rows.some((r) => r.access_scope === "open_access") ? (
+                              <span className="rounded-full bg-[#d4af37]/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#6b5410]">
+                                Both studios
+                              </span>
+                            ) : group.rows[0] ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1 px-2 text-xs"
+                                disabled={!canManage}
+                                onClick={() => setUpgradeCredit({ id: group.rows[0].id, title: group.title })}
+                              >
+                                Upgrade
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
                               variant="outline"
@@ -1157,6 +1191,12 @@ export function CustomerProfileSheet({
               <ContinuousFlowSection
                 profileId={profile.id}
                 canRestore={["director", "management"].includes(String(viewerRole ?? ""))}
+              />
+
+              <UpgradeAccessDialog
+                credit={upgradeCredit}
+                onClose={() => setUpgradeCredit(null)}
+                onDone={() => void load()}
               />
 
               <TierSection
