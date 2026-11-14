@@ -5,6 +5,7 @@ import {
   isComplimentaryClassTicket,
 } from "@/lib/scheduleBooking";
 import { pickPerClassHireAddons } from "@/lib/bookingAddons";
+import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 import { fetchMyWaitlistEntryForClass } from "@/lib/waitlist";
 import { supabase } from "@/lib/supabase";
 import { queryClient } from "@/lib/queryClient";
@@ -45,6 +46,16 @@ export type BookingSheetData = {
   isFreeClass: boolean;
   isComplimentaryClass: boolean;
   classTicketProduct: { id: string; name: string; price_zar: number } | null;
+  /** Packs on sale that cover this class, cheapest first (shown when the member has no pack). */
+  buyOptions: BuyOption[];
+};
+
+export type BuyOption = {
+  id: string;
+  name: string;
+  price_zar: number;
+  member_price_zar: number | null;
+  credit_count: number | null;
 };
 
 async function fetchBookableCatalogCached() {
@@ -126,6 +137,37 @@ export async function fetchBookingSheetData(
     }),
   ]);
 
+  // Packs a member can buy right here for this class.
+  let buyOptions: BuyOption[] = [];
+  if (!skipPayment && !complimentaryTicket && !ticket?.is_class_ticket) {
+    const { data: prodRows } = await supabase
+      .from("products")
+      .select("id, name, price_zar, member_price_zar, credit_count, category, allowed_class_types, sort_order")
+      .eq("is_active", true)
+      .eq("is_addon", false)
+      .eq("is_staff_only", false)
+      .gt("price_zar", 0)
+      .not("category", "in", "(staff,cafe,complimentary,mat_towel)");
+    buyOptions = ((prodRows ?? []) as (BuyOption & { category: string | null; allowed_class_types: string[] | null })[])
+      .filter((p) => !/staff|class ticket/i.test(p.name))
+      .filter((p) =>
+        userCreditCoversClassType({
+          category: p.category,
+          allowed_class_types: p.allowed_class_types,
+          classType: session.class_type,
+        }),
+      )
+      .sort((a, b) => Number(a.price_zar) - Number(b.price_zar))
+      .slice(0, 8)
+      .map(({ id, name, price_zar, member_price_zar, credit_count }) => ({
+        id,
+        name,
+        price_zar: Number(price_zar),
+        member_price_zar: member_price_zar == null ? null : Number(member_price_zar),
+        credit_count: credit_count == null ? null : Number(credit_count),
+      }));
+  }
+
   const addons = (addonData ?? []) as { id: string; name: string; price_zar: number }[];
   const hires = pickPerClassHireAddons(addons);
 
@@ -168,6 +210,7 @@ export async function fetchBookingSheetData(
     isFreeClass: skipPayment,
     isComplimentaryClass: complimentaryTicket,
     classTicketProduct: ticket,
+    buyOptions,
   };
 }
 

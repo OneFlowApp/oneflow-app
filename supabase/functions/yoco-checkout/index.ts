@@ -212,6 +212,23 @@ async function isActiveMember(supabase: any, profileId: string) {
   });
 }
 
+/** Reformer packs: category, included class types or name. */
+function isReformerProduct(p: any): boolean {
+  if (String(p?.category ?? "").toLowerCase().includes("reformer")) return true;
+  if (String(p?.name ?? "").toLowerCase().includes("reformer")) return true;
+  const types: unknown[] = Array.isArray(p?.allowed_class_types) ? p.allowed_class_types : [];
+  return types.length > 0 && types.every((t) => String(t).toLowerCase().includes("reformer"));
+}
+
+/** Guides get the member price on Reformer packs (main or extra role). */
+async function isGuideProfile(supabase: any, profileId: string) {
+  const { data } = await supabase.from("profiles").select("role, secondary_roles").eq("id", profileId).maybeSingle();
+  if (!data) return false;
+  if (String(data.role ?? "").toLowerCase() === "guide") return true;
+  const extra: unknown[] = Array.isArray(data.secondary_roles) ? data.secondary_roles : [];
+  return extra.some((r) => String(r).toLowerCase() === "guide");
+}
+
 /** Unpaid late cancel and no-show fees for a member (from member_fees). */
 async function loadUnpaidFees(supabase: any, profileId: string) {
   const { data } = await supabase
@@ -537,7 +554,12 @@ serve(async (req) => {
   const memberPriceZar = Number(packRow.member_price_zar ?? 0);
   let memberPriceApplied = false;
   let priceZar = listPriceZar;
-  if (memberPriceZar > 0 && memberPriceZar < listPriceZar && (await isActiveMember(supabase, String(profile_id)))) {
+  if (
+    memberPriceZar > 0 &&
+    memberPriceZar < listPriceZar &&
+    ((await isActiveMember(supabase, String(profile_id))) ||
+      (isReformerProduct(packRow) && (await isGuideProfile(supabase, String(profile_id)))))
+  ) {
     priceZar = memberPriceZar;
     memberPriceApplied = true;
   }

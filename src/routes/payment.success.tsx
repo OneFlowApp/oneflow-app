@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { userCreditCoversClassType } from "@/lib/allowedClassTypes";
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
@@ -57,7 +58,7 @@ async function waitForPackCredits(args: {
     const since = new Date(Date.now() - CREDIT_RECENT_WINDOW_MS).toISOString();
     const { data, error } = await supabase
       .from("user_credits")
-      .select("id, is_unlimited")
+      .select("id, is_unlimited, category, allowed_class_types")
       .eq("profile_id", args.profileId)
       .eq("product_id", args.packId)
       .gte("purchased_at", since)
@@ -198,7 +199,19 @@ function PaymentSuccessPage() {
       }
 
       if (classId && autoBook) {
-        const creditId = credits[0]?.id ?? null;
+        // A pack with several parts (e.g. Reformer + Wellzone): book with the part that covers this class.
+        const { data: clsRow } = await supabase.from("classes").select("class_type").eq("id", classId).maybeSingle();
+        const clsType = String((clsRow as { class_type?: string } | null)?.class_type ?? "");
+        const match = clsType
+          ? credits.find((c) =>
+              userCreditCoversClassType({
+                category: (c as { category?: string | null }).category ?? null,
+                allowed_class_types: (c as { allowed_class_types?: string[] | null }).allowed_class_types ?? null,
+                classType: clsType,
+              }),
+            )
+          : undefined;
+        const creditId = (match ?? credits[0])?.id ?? null;
         const booked = await autoBookClassAfterTicketPurchase({
           profileId,
           classId,
