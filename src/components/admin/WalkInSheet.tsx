@@ -82,7 +82,8 @@ function formatClassOptionLabel(c: FutureClassRow): string {
     weekday: "short",
     hour12: true,
   });
-  return `${c.name} · ${when}`;
+  const started = new Date(c.starts_at).getTime() <= Date.now();
+  return `${c.name} · ${when}${started ? " · started" : ""}`;
 }
 
 function isValidEmail(v: string): boolean {
@@ -163,14 +164,22 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
 
     void (async () => {
       setLoadingClasses(true);
-      const nowIso = new Date().toISOString();
-      const { data, error } = await supabase
+      // Include classes that have already started but not finished, so late arrivals can be added.
+      const nowMs = Date.now();
+      const sinceIso = new Date(nowMs - 4 * 60 * 60 * 1000).toISOString();
+      const { data: raw, error } = await supabase
         .from("classes")
         .select("id, name, starts_at, ends_at, class_type, guide_name, location")
         .eq("is_cancelled", false)
-        .gte("starts_at", nowIso)
+        .gte("starts_at", sinceIso)
         .order("starts_at")
-        .limit(250);
+        .limit(300);
+      const data = ((raw ?? []) as FutureClassRow[]).filter((c) => {
+        const start = new Date(c.starts_at).getTime();
+        if (start >= nowMs) return true;
+        const end = c.ends_at ? new Date(c.ends_at).getTime() : start + 60 * 60 * 1000;
+        return end > nowMs;
+      });
 
       if (error) {
         console.error("walk-in: future classes load failed", error);
@@ -616,7 +625,7 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Defaults to the next upcoming class today; all future classes are listed.
+              Defaults to the class running now or the next one today. Classes already under way are listed too.
             </p>
           </div>
 
