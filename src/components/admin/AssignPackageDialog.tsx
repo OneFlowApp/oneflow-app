@@ -128,6 +128,15 @@ type ProductPick = {
   allowed_class_types: string[] | null;
   is_active?: boolean;
   pricing_section_id?: string | null;
+  access_scope?: string | null;
+};
+
+/** Where a manually assigned pack was paid for. */
+type PayWhere = "none" | "green_point" | "studio";
+const PAY_WHERE_ID: Record<PayWhere, string> = {
+  none: "manual_assignment",
+  green_point: "manual_green_point",
+  studio: "manual_studio",
 };
 
 /** Products with no section, or a section that no longer exists, are grouped here. */
@@ -276,6 +285,10 @@ export function AssignPackageDialog({
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [existingNote, setExistingNote] = useState("");
   const [assignStartDate, setAssignStartDate] = useState("");
+  const [payWhere, setPayWhere] = useState<PayWhere>("none");
+  const [payAmount, setPayAmount] = useState("");
+  const [payRef, setPayRef] = useState("");
+  const [withBothStudios, setWithBothStudios] = useState(false);
   const [assignEndDate, setAssignEndDate] = useState("");
 
   const [customName, setCustomName] = useState("");
@@ -322,6 +335,10 @@ export function AssignPackageDialog({
     setExistingNote("");
     setAssignStartDate(todayCreditDateInput());
     setAssignEndDate("");
+    setPayWhere("none");
+    setPayAmount("");
+    setPayRef("");
+    setWithBothStudios(false);
     setCustomName("");
     setCustomCategory("yoga");
     setCustomCredits("10");
@@ -395,7 +412,7 @@ export function AssignPackageDialog({
       let query = supabase
         .from("products")
         .select(
-          "id, name, credit_count, category, validity_days, allowed_class_types, is_addon, is_active, pricing_section_id",
+          "id, name, credit_count, category, validity_days, allowed_class_types, is_addon, is_active, pricing_section_id, access_scope",
         )
         // Staff packs and saved custom packages are switched off for sale but still assignable.
         .order("sort_order", { ascending: true })
@@ -422,6 +439,7 @@ export function AssignPackageDialog({
             allowed_class_types: normalizeClassTypes(raw.allowed_class_types),
             is_active: raw.is_active !== false,
             pricing_section_id: raw.pricing_section_id == null ? null : String(raw.pricing_section_id),
+            access_scope: raw.access_scope == null ? null : String(raw.access_scope),
           })),
         );
       }
@@ -636,6 +654,12 @@ export function AssignPackageDialog({
     }
     const isUnlimited = rawCount >= UNLIMITED_PRODUCT_THRESHOLD;
     const total = isUnlimited ? rawCount : Math.trunc(rawCount);
+    const paidZar = Number(payAmount.replace(",", "."));
+    if (payWhere !== "none" && !(paidZar > 0)) {
+      toast.error("Enter the amount the member paid.");
+      return;
+    }
+    const bothStudios = product.access_scope === "open_access" || withBothStudios;
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
@@ -735,7 +759,15 @@ export function AssignPackageDialog({
         isUnlimited,
       });
       const extraCreditRows = buildBundleExtraInsertRows(product, t.profileId, expiresAt, purchasedAt);
-      const creditRows = [...baseCreditRows, ...extraCreditRows];
+      // Payment place, amount and studio access, so manual sales show in reports like online ones.
+      const creditRows = [...baseCreditRows, ...extraCreditRows].map((r, i) => ({
+        ...r,
+        yoco_payment_id: PAY_WHERE_ID[payWhere],
+        access_scope: bothStudios ? "open_access" : "longkloof",
+        ...(i === 0 && payWhere !== "none"
+          ? { amount_paid_zar: paidZar, payment_note: payRef.trim() || null }
+          : {}),
+      }));
 
       const { data: inserted, error } = await supabase
         .from("user_credits")
@@ -1104,7 +1136,13 @@ export function AssignPackageDialog({
               ) : (
                 primaryAssignee.displayName
               )}
-              <span className="block text-xs">No payment — manual credit grant</span>
+              <span className="block text-xs">
+                {payWhere === "none"
+                  ? "No payment — manual credit grant"
+                  : payWhere === "green_point"
+                    ? "Paid at De Waterkant (Green Point)"
+                    : "Paid at the Longkloof front desk"}
+              </span>
             </p>
           </DialogHeader>
 
@@ -1191,6 +1229,64 @@ export function AssignPackageDialog({
                   onStartChange={setAssignStartDate}
                   onEndChange={setAssignEndDate}
                 />
+                <div className="space-y-3 rounded-lg border border-border p-3">
+                  <Label>Payment</Label>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {(
+                      [
+                        ["none", "No payment (comp)"],
+                        ["green_point", "Paid at De Waterkant"],
+                        ["studio", "Paid at Longkloof desk"],
+                      ] as const
+                    ).map(([v, label]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setPayWhere(v)}
+                        className={
+                          payWhere === v
+                            ? "rounded-md border-2 border-[#a3b693] bg-[#a3b693]/15 px-2 py-2 text-sm font-semibold"
+                            : "rounded-md border border-border px-2 py-2 text-sm"
+                        }
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {payWhere !== "none" ? (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="grid gap-1">
+                        <Label htmlFor="assign-pay-amount">Amount paid (R)</Label>
+                        <Input
+                          id="assign-pay-amount"
+                          inputMode="decimal"
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          placeholder="e.g. 1400"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="assign-pay-ref">Receipt / reference (optional)</Label>
+                        <Input
+                          id="assign-pay-ref"
+                          value={payRef}
+                          onChange={(e) => setPayRef(e.target.value)}
+                          placeholder="e.g. Mindbody sale #"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                  {selectedProduct?.access_scope === "open_access" ? (
+                    <p className="text-xs text-muted-foreground">
+                      This pack includes Access to: Longkloof &amp; Green Point.
+                    </p>
+                  ) : (
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox checked={withBothStudios} onCheckedChange={(c) => setWithBothStudios(c === true)} />
+                      Includes the upgrade: Access to: Longkloof &amp; Green Point
+                    </label>
+                  )}
+                </div>
                 {isBundleAssign && selectedProduct ? (
                   <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
                     <div>

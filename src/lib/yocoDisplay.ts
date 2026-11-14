@@ -4,6 +4,8 @@ const YOCO_PLACEHOLDER_IDS = new Set([
   "manual_assignment",
   "free_intro",
   "manual_component",
+  "manual_green_point",
+  "manual_studio",
 ]);
 
 function normalizedYocoId(raw: string | null | undefined): string {

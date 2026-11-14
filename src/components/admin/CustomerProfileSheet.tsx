@@ -1190,7 +1190,11 @@ export function CustomerProfileSheet({
                           const payLabel =
                             !pay || pay === "manual_assignment"
                               ? "Manual / comp"
-                              : pay.length > 24
+                              : pay === "manual_green_point"
+                                ? "Paid at De Waterkant"
+                                : pay === "manual_studio"
+                                  ? "Paid at Longkloof desk"
+                                  : pay.length > 24
                                 ? `${pay.slice(0, 12)}…${pay.slice(-6)}`
                                 : pay;
                           const assigned =
