@@ -67,7 +67,7 @@ const except = (...excluded: AdminArea[]) => ALL_AREAS.filter((a) => !excluded.i
 /** Pages each role can open (shown in the admin menu). */
 const PAGES: Record<StaffRole, readonly AdminArea[]> = {
   director: ALL_AREAS,
-  management: except("payouts"),
+  management: except("payouts", "transactions"),
   marketing: except("schedule", "payouts", "transactions", "reviews"),
   front_desk: ["check-in", "bookings"],
   guide: ["check-in", "bookings"],
@@ -77,7 +77,7 @@ const PAGES: Record<StaffRole, readonly AdminArea[]> = {
 /** Areas each role can change. Every other page they open is view only. */
 const EDIT: Record<StaffRole, readonly AdminArea[]> = {
   director: ALL_AREAS,
-  management: except("payouts"),
+  management: except("payouts", "transactions"),
   marketing: ["email", "client-comms", "promotions"],
   front_desk: ["check-in", "bookings"],
   guide: ["check-in"],
