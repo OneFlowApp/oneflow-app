@@ -29,6 +29,7 @@ export type AdminArea =
   | "waivers"
   | "badges"
   | "reviews"
+  | "studios"
   | "challenge"
   | "promotions"
   | "email"
@@ -51,6 +52,7 @@ const ALL_AREAS: readonly AdminArea[] = [
   "waivers",
   "badges",
   "reviews",
+  "studios",
   "challenge",
   "promotions",
   "email",
@@ -67,8 +69,8 @@ const except = (...excluded: AdminArea[]) => ALL_AREAS.filter((a) => !excluded.i
 /** Pages each role can open (shown in the admin menu). */
 const PAGES: Record<StaffRole, readonly AdminArea[]> = {
   director: ALL_AREAS,
-  management: except("payouts"),
-  marketing: except("schedule", "payouts", "transactions", "reviews"),
+  management: except("payouts", "studios"),
+  marketing: except("schedule", "payouts", "transactions", "reviews", "studios"),
   front_desk: ["check-in", "bookings"],
   guide: ["check-in", "bookings"],
   boh: ["bookings"],
@@ -77,7 +79,7 @@ const PAGES: Record<StaffRole, readonly AdminArea[]> = {
 /** Areas each role can change. Every other page they open is view only. */
 const EDIT: Record<StaffRole, readonly AdminArea[]> = {
   director: ALL_AREAS,
-  management: except("payouts"),
+  management: except("payouts", "studios"),
   marketing: ["email", "client-comms", "promotions"],
   front_desk: ["check-in", "bookings"],
   guide: ["check-in"],
