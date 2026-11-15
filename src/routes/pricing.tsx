@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { ConcessionPanel, useConcession } from "@/components/ConcessionDiscount";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -186,6 +187,7 @@ function PricingPage() {
   const [checkoutSlow, setCheckoutSlow] = useState(false);
   const [promoInput, setPromoInput] = useState("");
   const [promoCode, setPromoCode] = useState("");
+  const { concession, reload: reloadConcession } = useConcession(true);
   const [promoDetails, setPromoDetails] = useState<PromoDetails | null>(null);
   const [promoStatus, setPromoStatus] = useState<
     { kind: "idle" } | { kind: "valid"; label: string } | { kind: "invalid"; message: string }
@@ -444,6 +446,7 @@ function PricingPage() {
       promo_code: promoCode || undefined,
     };
     if (addonIds && addonIds.length > 0) body.addon_ids = addonIds;
+    if (concession.kind && !promoCode) body.concession = true;
     if (redemption.flow_points_used > 0) {
       body.flow_points_used = redemption.flow_points_used;
       body.flow_points_discount_zar = redemption.flow_points_discount_zar;
@@ -874,6 +877,12 @@ function PricingPage() {
               <p className="mt-1.5 text-xs font-medium text-destructive">{promoStatus.message}</p>
             )}
           </div>
+
+          <ConcessionPanel
+            concession={concession}
+            onChanged={() => void reloadConcession()}
+            promoInUse={Boolean(promoCode)}
+          />
 
           <p className="text-center text-xs text-muted-foreground">
             Questions?{" "}

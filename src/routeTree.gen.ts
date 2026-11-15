@@ -47,6 +47,7 @@ import { Route as AdminInstallAppRouteImport } from './routes/admin.install-app'
 import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
+import { Route as AdminConcessionsRouteImport } from './routes/admin.concessions'
 import { Route as AdminClientCommsRouteImport } from './routes/admin.client-comms'
 import { Route as AdminCheckInRouteImport } from './routes/admin.check-in'
 import { Route as AdminChallengeRouteImport } from './routes/admin.challenge'
@@ -246,6 +247,11 @@ const AdminCustomersRoute = AdminCustomersRouteImport.update({
   path: '/customers',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminConcessionsRoute = AdminConcessionsRouteImport.update({
+  id: '/concessions',
+  path: '/concessions',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminClientCommsRoute = AdminClientCommsRouteImport.update({
   id: '/client-comms',
   path: '/client-comms',
@@ -310,6 +316,7 @@ export interface FileRoutesByFullPath {
   '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
+  '/admin/concessions': typeof AdminConcessionsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
@@ -356,6 +363,7 @@ export interface FileRoutesByTo {
   '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
+  '/admin/concessions': typeof AdminConcessionsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
@@ -405,6 +413,7 @@ export interface FileRoutesById {
   '/admin/challenge': typeof AdminChallengeRoute
   '/admin/check-in': typeof AdminCheckInRoute
   '/admin/client-comms': typeof AdminClientCommsRoute
+  '/admin/concessions': typeof AdminConcessionsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
   '/admin/guides': typeof AdminGuidesRoute
@@ -455,6 +464,7 @@ export interface FileRouteTypes {
     | '/admin/challenge'
     | '/admin/check-in'
     | '/admin/client-comms'
+    | '/admin/concessions'
     | '/admin/customers'
     | '/admin/email'
     | '/admin/guides'
@@ -501,6 +511,7 @@ export interface FileRouteTypes {
     | '/admin/challenge'
     | '/admin/check-in'
     | '/admin/client-comms'
+    | '/admin/concessions'
     | '/admin/customers'
     | '/admin/email'
     | '/admin/guides'
@@ -549,6 +560,7 @@ export interface FileRouteTypes {
     | '/admin/challenge'
     | '/admin/check-in'
     | '/admin/client-comms'
+    | '/admin/concessions'
     | '/admin/customers'
     | '/admin/email'
     | '/admin/guides'
@@ -866,6 +878,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminCustomersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/concessions': {
+      id: '/admin/concessions'
+      path: '/concessions'
+      fullPath: '/admin/concessions'
+      preLoaderRoute: typeof AdminConcessionsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/client-comms': {
       id: '/admin/client-comms'
       path: '/client-comms'
@@ -957,6 +976,7 @@ interface AdminRouteChildren {
   AdminChallengeRoute: typeof AdminChallengeRoute
   AdminCheckInRoute: typeof AdminCheckInRoute
   AdminClientCommsRoute: typeof AdminClientCommsRoute
+  AdminConcessionsRoute: typeof AdminConcessionsRoute
   AdminCustomersRoute: typeof AdminCustomersRouteWithChildren
   AdminEmailRoute: typeof AdminEmailRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
@@ -981,6 +1001,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminChallengeRoute: AdminChallengeRoute,
   AdminCheckInRoute: AdminCheckInRoute,
   AdminClientCommsRoute: AdminClientCommsRoute,
+  AdminConcessionsRoute: AdminConcessionsRoute,
   AdminCustomersRoute: AdminCustomersRouteWithChildren,
   AdminEmailRoute: AdminEmailRoute,
   AdminGuidesRoute: AdminGuidesRoute,
