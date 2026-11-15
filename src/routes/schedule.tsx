@@ -7,6 +7,7 @@ import { BookingSheet } from "@/components/BookingSheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
+import { useQuery } from "@tanstack/react-query";
 import { useTimezone } from "@/hooks/use-timezone";
 import {
   confirmedBookingIntervalsFromRows,
@@ -446,13 +447,36 @@ export default function SchedulePage() {
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [classes, filters.types, typeLabelFor]);
 
+  // Every guide on the timetable in the next 8 weeks, not only those teaching on the chosen day,
+  // so a member can pick their favourite guide and then flip through the days.
+  const upcomingGuidesQuery = useQuery({
+    queryKey: ["schedule-upcoming-guides"],
+    queryFn: async () => {
+      const now = new Date();
+      const until = new Date(now.getTime() + 56 * 86_400_000);
+      const { data } = await supabase
+        .from("classes")
+        .select("guide_name")
+        .eq("is_cancelled", false)
+        .gte("starts_at", now.toISOString())
+        .lt("starts_at", until.toISOString())
+        .not("guide_name", "is", null)
+        .limit(3000);
+      return [...new Set(((data ?? []) as { guide_name: string | null }[]).map((r) => r.guide_name?.trim() ?? ""))].filter(
+        Boolean,
+      );
+    },
+    staleTime: 10 * 60_000,
+  });
+
   const guideOptions = useMemo(() => {
     const set = new Set<string>(filters.guides);
+    (upcomingGuidesQuery.data ?? []).forEach((g) => set.add(g));
     classes.forEach((c) => {
       if (c.guide_name?.trim()) set.add(c.guide_name.trim());
     });
     return [...set].sort((a, b) => a.localeCompare(b));
-  }, [classes, filters.guides]);
+  }, [classes, filters.guides, upcomingGuidesQuery.data]);
 
   const allDayClasses = classes;
   const filteredClasses = useMemo(() => {
