@@ -23,7 +23,7 @@ export function addClassToCalendar(c: CalendarClass) {
   const notes = [
     c.guide ? `With ${c.guide}` : null,
     /reformer/i.test(c.title) ? "Please remember to bring grippy socks." : null,
-    "Your check-in QR is in the One Flow app under My bookings.",
+    "Please check in at the front desk when you arrive.",
   ]
     .filter(Boolean)
     .join("\n");

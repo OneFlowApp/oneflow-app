@@ -266,7 +266,7 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
           ${addressRow}
         </div>
         ${socksNote}
-        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing. Your check-in QR is in the app under <strong>My bookings</strong>.</p>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
         ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
         <p style="font-size:14px;color:#888;margin:24px 0 0;">See you on the mat — One Flow Team</p>
@@ -355,7 +355,7 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
           ${addressRow}
         </div>
         ${socksNote}
-        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your QR check-in code is ready in the app under <strong>My bookings</strong>. What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
+        <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
         ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
         <p style="font-size:13px;line-height:1.6;color:#888;margin:16px 0 0;">Can't make it any more? Cancel from the app — standard 2-hour cancellation policy still applies.</p>

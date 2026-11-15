@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { addClassToCalendar } from "@/lib/addToCalendar";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import { CalendarPlus, Clock, MapPin, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -323,23 +322,6 @@ function BookingsPage() {
                     <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
                     Add to calendar
                   </button>
-                  {b.qrToken && (
-                    <div className="mt-4 flex flex-col items-center border-t border-border pt-4">
-                      <div className="flex min-h-[200px] min-w-[200px] items-center justify-center rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                        <QRCodeSVG
-                          value={b.qrToken}
-                          size={200}
-                          level="M"
-                          includeMargin
-                          title="Class check-in code"
-                          className="h-[200px] w-[200px] max-w-full"
-                        />
-                      </div>
-                      <p className="mt-3 max-w-[260px] text-center text-sm font-medium text-muted-foreground">
-                        Show this at the desk to check in
-                      </p>
-                    </div>
-                  )}
                 </article>
               ))}
 
