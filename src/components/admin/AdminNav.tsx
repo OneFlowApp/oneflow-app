@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Home, LogOut, type LucideIcon } from "lucide-react";
 import {
   LayoutGrid,
-  QrCode,
+  ClipboardCheck,
   CalendarDays,
   BookOpen,
   Users,
@@ -46,7 +46,7 @@ export function navItemsForRole(profile: AdminRoleProfile): AdminNavItem[] {
 
 export const adminNavItems: AdminNavItem[] = [
   { to: "/admin", label: "Dashboard", icon: LayoutGrid },
-  { to: "/admin/check-in", label: "Check-In", icon: QrCode },
+  { to: "/admin/check-in", label: "Check-In", icon: ClipboardCheck },
   { to: "/admin/schedule", label: "Master", icon: CalendarDays },
   { to: "/admin/bookings", label: "Bookings", icon: BookOpen },
   { to: "/admin/customers", label: "Customers", icon: Users },

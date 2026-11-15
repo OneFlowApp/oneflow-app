@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import { Clock, MapPin, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
@@ -32,7 +31,7 @@ function uuidOrUndefined(v: unknown): string | undefined {
 
 export const Route = createFileRoute("/bookings")({
   validateSearch: (raw: Record<string, unknown>) => ({
-    /** When set (e.g. from home “Upcoming”), scroll to this booking and show its check-in QR. */
+    /** When set (e.g. from home “Upcoming”), scroll to this booking. */
     booking: uuidOrUndefined(raw.booking),
   }),
   component: BookingsPage,
@@ -56,7 +55,6 @@ type RawBooking = {
 type BookingListRow = {
   id: string;
   status: string;
-  qrToken: string | null;
   className: string;
   classType: ClassType;
   location: string;
@@ -116,7 +114,6 @@ function BookingsPage() {
         return {
           id: raw.id,
           status: raw.status,
-          qrToken: raw.qr_token ?? null,
           className: (cls ? classTitle(cls) : "") || "Class",
           classType: displayClassType(
             (cls ? classTypeSlugFor(cls) : null) ?? cls?.class_type,
@@ -303,23 +300,6 @@ function BookingsPage() {
                     className="mt-3"
                     onCancelled={refreshBookings}
                   />
-                  {b.qrToken && (
-                    <div className="mt-4 flex flex-col items-center border-t border-border pt-4">
-                      <div className="flex min-h-[200px] min-w-[200px] items-center justify-center rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-                        <QRCodeSVG
-                          value={b.qrToken}
-                          size={200}
-                          level="M"
-                          includeMargin
-                          title="Class check-in code"
-                          className="h-[200px] w-[200px] max-w-full"
-                        />
-                      </div>
-                      <p className="mt-3 max-w-[260px] text-center text-sm font-medium text-muted-foreground">
-                        Show this at the desk to check in
-                      </p>
-                    </div>
-                  )}
                 </article>
               ))}
 
