@@ -169,16 +169,6 @@ function HomePage() {
                             </p>
                           ) : null}
                         </div>
-                        <Link
-                          to="/bookings"
-                          search={{ booking: b.id }}
-                          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold text-white"
-                          style={{ backgroundColor: SAGE }}
-                          aria-label={`Open check-in QR for ${b.name}`}
-                        >
-                          <QrCode className="h-3.5 w-3.5" aria-hidden />
-                          QR
-                        </Link>
                       </div>
                       <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
