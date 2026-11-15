@@ -705,9 +705,16 @@ function BookingsPage() {
                       {session.location?.trim() ? ` · ${session.location.trim()}` : ""}
                     </p>
                   </div>
-                  <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
-                    {session.booked_count}/{session.capacity}
-                  </span>
+                  {isClassEnded(session, nowMs) ? (
+                    // Once a class is over, show who actually came, not who booked.
+                    <span className="shrink-0 tabular-nums text-xs font-semibold text-[#4a6b3c]">
+                      {(bookingsByClass.get(session.id) ?? []).filter((b) => b.status === "attended").length} checked in
+                    </span>
+                  ) : (
+                    <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                      {session.booked_count}/{session.capacity}
+                    </span>
+                  )}
                   <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
                 </Link>
               </li>

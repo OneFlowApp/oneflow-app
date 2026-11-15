@@ -832,6 +832,13 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               ) : null}
             </ul>
 
+            {/reformer/i.test(`${session.class_type ?? ""} ${classTitle(session)}`) ? (
+              <div className="mt-4 rounded-xl border border-[#e8923a]/50 bg-[#fff8f0] px-3 py-2.5 text-xs text-[#8a5a20]">
+                <p className="font-semibold">Please remember to bring grippy socks.</p>
+                <p>You will not be able to do the class without grippy socks.</p>
+              </div>
+            ) : null}
+
             {countsTowardChallenge && (
               <div className="mt-4 flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2.5 text-xs font-medium">
                 <Sparkles className="h-3.5 w-3.5 text-primary" />

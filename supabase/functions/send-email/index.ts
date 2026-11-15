@@ -215,6 +215,12 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
   const className = String(data.class_name ?? "Class");
   const guideName = String(data.guide_name ?? "Guide");
   const location = String(data.location ?? "One Flow Studio");
+  const studioAddress = String(data.studio_address ?? "").trim();
+  const addressRow = studioAddress ? detailRow("Address", studioAddress) : "";
+  const isReformer = /reformer/i.test(`${className} ${String(data.class_type ?? "")}`);
+  const socksNote = isReformer
+    ? `<div style="background:#fff8f0;border-left:3px solid #e8923a;padding:12px 16px;border-radius:0 8px 8px 0;font-size:14px;color:#8a5a20;margin:16px 0;"><strong>Please remember to bring grippy socks.</strong> You will not be able to do the class without grippy socks.</div>`
+    : "";
   const dt = formatDateTime(data.starts_at ?? data.date_time);
   const date = String(data.date ?? dt.date);
   const time = String(data.time ?? dt.time);
@@ -231,6 +237,7 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
           ${detailRow("Date", date)}
           ${detailRow("Time", time)}
+          ${addressRow}
         </div>
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: shower towel only. No workout clothes needed.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
@@ -256,7 +263,9 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
           ${detailRow("Time", time)}
           ${detailRow("Guide", guideName)}
           ${detailRow("Location", location)}
+          ${addressRow}
         </div>
+        ${socksNote}
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing. Your check-in QR is in the app under <strong>My bookings</strong>.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
         ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
@@ -275,6 +284,7 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         <div style="background:#f5f5f0;border-radius:8px;padding:16px 20px;margin:16px 0;">
           ${detailRow("Date", date)}
           ${detailRow("Time", time)}
+          ${addressRow}
         </div>
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: shower towel only. No workout clothes needed.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
@@ -342,7 +352,9 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
           ${detailRow("Time", time)}
           ${detailRow("Guide", guideName)}
           ${detailRow("Location", location)}
+          ${addressRow}
         </div>
+        ${socksNote}
         <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">Your QR check-in code is ready in the app under <strong>My bookings</strong>. What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
         ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
         ${ctaButton("https://oneflow1.netlify.app/bookings", "View booking")}
@@ -363,7 +375,9 @@ function buildTemplate(template: TemplateName, data: Record<string, unknown> = {
         ${detailRow("Time", time)}
         ${detailRow("Guide", guideName)}
         ${detailRow("Location", location)}
+        ${addressRow}
       </div>
+      ${socksNote}
       <p style="font-size:15px;line-height:1.6;color:#444;margin:0 0 12px;">What to bring: yoga mat (if not renting), water bottle, comfortable clothing.</p>
       ${addons ? `<div style="margin:8px 0 0;">${addons}</div>` : ""}
       <p style="font-size:14px;color:#888;margin:24px 0 0;">See you on the mat — One Flow Team</p>
@@ -506,7 +520,18 @@ serve(async (req) => {
     if (allowed.error) return allowed.error;
     const toAddress = String(allowed.to);
 
-    const { subject, content } = buildTemplate(body.template, body.data ?? {});
+    // The studio's street address (Admin → Settings → Address) goes into booking emails.
+    const emailData: Record<string, unknown> = { ...(body.data ?? {}) };
+    if (!emailData.studio_address) {
+      try {
+        const sb: any = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: addr } = await sb.from("studio_settings").select("value").eq("key", "studio_address").maybeSingle();
+        if (addr?.value) emailData.studio_address = String(addr.value);
+      } catch (_e) {
+        /* address is optional */
+      }
+    }
+    const { subject, content } = buildTemplate(body.template, emailData);
     const html = await wrapHtml(content);
     const logoAttachment = await getLogoAttachment();
 
