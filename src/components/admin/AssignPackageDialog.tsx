@@ -488,6 +488,32 @@ export function AssignPackageDialog({
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   }, [products, existingCategory, sectionKeyOf]);
 
+  // The parts set up for the chosen pack in Admin → Products (what will actually be assigned).
+  const [selectedAllowances, setSelectedAllowances] = useState<{ label: string | null; credits: number | null }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedProductId) {
+      setSelectedAllowances([]);
+      return;
+    }
+    void supabase
+      .from("product_allowances")
+      .select("label, credits, class_types, sort_order")
+      .eq("product_id", selectedProductId)
+      .order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (cancelled) return;
+        setSelectedAllowances(
+          ((data ?? []) as { label: string | null; credits: number | null; class_types: string[] | null }[]).filter(
+            (a) => (a.class_types ?? []).length > 0,
+          ),
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedProductId]);
+
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === selectedProductId) ?? null,
     [products, selectedProductId],
@@ -725,23 +751,28 @@ export function AssignPackageDialog({
         );
         continue;
       }
-      const baseCreditRows = allowances.length > 1
-        ? allowances.flatMap((al) => {
+      // Packs set up in Admin → Products: one balance per included item, exactly as an online purchase.
+      // (The old built-in pack rules added extra parts on top, which doubled or tripled packs like The Seeker.)
+      const baseCreditRows = allowances.length > 0
+        ? allowances.map((al) => {
             const c = Math.max(1, Math.trunc(Number(al.credits) || 1));
             const unl = c >= UNLIMITED_PRODUCT_THRESHOLD;
-            return buildProductCreditRows({
-              productName: `${product.name} - ${al.label?.trim() || "Included"}`,
-              profileId: t.profileId,
-              productId: product.id,
-              expiresAt,
-              paymentId: "manual_assignment",
-              purchasedAt,
+            return {
+              profile_id: t.profileId,
+              product_id: product.id,
+              product_name:
+                allowances.length > 1 ? `${product.name} - ${al.label?.trim() || "Included"}` : product.name,
               category: product.category ?? "yoga",
-              allowedClassTypes: al.class_types ?? [],
-              creditsTotal: c,
-              creditsRemaining: c,
-              isUnlimited: unl,
-            });
+              allowed_class_types: al.class_types ?? [],
+              credits_total: c,
+              credits_remaining: c,
+              is_unlimited: unl,
+              expires_at: expiresAt,
+              yoco_payment_id: "manual_assignment",
+              mat_access: false,
+              towel_access: false,
+              purchased_at: purchasedAt,
+            };
           })
         : buildProductCreditRows({
         productName: product.name,
@@ -1292,13 +1323,21 @@ export function AssignPackageDialog({
                     <div>
                       <p className="text-sm font-medium">Included with this package</p>
                       <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-                        {bundlePreviewRows.map((row) => (
-                          <li key={row.product_name}>
-                            <span className="font-medium text-foreground">{row.product_name}</span>
-                            {" · "}
-                            {bundleRowSummary(row)}
-                          </li>
-                        ))}
+                        {selectedAllowances.length > 0
+                          ? selectedAllowances.map((a, i) => (
+                              <li key={`${a.label}-${i}`}>
+                                <span className="font-medium text-foreground">{a.label?.trim() || "Included"}</span>
+                                {" · "}
+                                {Number(a.credits) >= UNLIMITED_PRODUCT_THRESHOLD ? "Unlimited" : `${a.credits} credits`}
+                              </li>
+                            ))
+                          : bundlePreviewRows.map((row) => (
+                              <li key={row.product_name}>
+                                <span className="font-medium text-foreground">{row.product_name}</span>
+                                {" · "}
+                                {bundleRowSummary(row)}
+                              </li>
+                            ))}
                       </ul>
                     </div>
                     <div className="border-t border-border pt-3">

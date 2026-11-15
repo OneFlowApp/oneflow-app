@@ -66,7 +66,27 @@ type TxRow = {
   yocoPaymentId: string | null;
   refundedAt: string | null;
   refundReason: string | null;
+  /** All credit rows of this purchase (a multi-part pack is one sale). Empty for upgrade records. */
+  creditIds: string[];
+  paidWhere: PaidWhere;
+  note: string | null;
 };
+
+type PaidWhere = "online" | "green_point" | "studio" | "comp";
+
+const PAID_WHERE_LABEL: Record<PaidWhere, string> = {
+  online: "Online (Yoco)",
+  green_point: "Paid at De Waterkant",
+  studio: "Paid at Longkloof desk",
+  comp: "Comp / assigned",
+};
+
+function paidWhereFromId(id: string | null): PaidWhere {
+  if (isRecordedYocoPayment(id)) return "online";
+  if (id === "manual_green_point") return "green_point";
+  if (id === "manual_studio") return "studio";
+  return "comp";
+}
 
 type SortKey = "date_desc" | "date_asc" | "amount_desc" | "amount_asc" | "name_asc";
 
@@ -142,14 +162,19 @@ function TransactionsPage() {
     setLoading(true);
     const monthStart = jhbDayBoundsAt(29);
 
+    const upgradesPromise = supabase
+      .from("credit_access_upgrades")
+      .select("id, created_at, profile_id, product_name, paid_where, amount_zar, reference, profile:profile_id(first_name, last_name)")
+      .order("created_at", { ascending: false })
+      .limit(1000);
     const [creditsRes, offlineRes] = await Promise.all([
       supabase
         .from("user_credits")
         .select(
-          "id, created_at, purchased_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
+          "id, created_at, purchased_at, profile_id, product_id, product_name, yoco_payment_id, refunded_at, refund_reason, amount_paid_zar, payment_note, profile:profile_id(first_name, last_name), product:product_id(name, price_zar)",
         )
         .order("created_at", { ascending: false })
-        .limit(2000),
+        .limit(3000),
       supabase
         .from("offline_revenue")
         .select("occurred_at, amount_zar")
@@ -173,7 +198,9 @@ function TransactionsPage() {
 
     const offlineRows = (offlineRes.data ?? []) as { occurred_at: string; amount_zar: number }[];
 
-    const mapped: TxRow[] = (data ?? []).map((raw: Record<string, unknown>) => {
+    // One line per purchase: the parts of a multi-part pack (e.g. The Seeker) share one sale.
+    const groups = new Map<string, TxRow>();
+    for (const raw of (data ?? []) as Record<string, unknown>[]) {
       const profile = (Array.isArray(raw.profile) ? raw.profile[0] : raw.profile) as
         | { first_name?: string; last_name?: string }
         | null;
@@ -182,27 +209,74 @@ function TransactionsPage() {
         | null;
       const memberName =
         [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim() || "—";
-      const productName =
-        (raw.product_name as string | null)?.trim() || product?.name || "—";
-      const amount = Number(product?.price_zar ?? 0) || 0;
+      const partName = (raw.product_name as string | null)?.trim() || product?.name || "—";
       const yoco = (raw.yoco_payment_id as string | null) ?? null;
-      return {
+      const paidWhere = paidWhereFromId(yoco);
+      const date =
+        (raw.purchased_at as string | null) ?? (raw.created_at as string) ?? new Date().toISOString();
+      const key = [
+        raw.profile_id,
+        raw.product_id ?? partName,
+        paidWhere === "online" ? yoco : `${yoco}|${date}|${String(raw.created_at ?? "").slice(0, 16)}`,
+      ].join("|");
+      const paid = Number(raw.amount_paid_zar ?? 0) || 0;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.creditIds.push(String(raw.id));
+        if (paidWhere === "green_point" || paidWhere === "studio") existing.amount += paid;
+        if (!existing.note && raw.payment_note) existing.note = String(raw.payment_note);
+        if (product?.name) existing.productName = product.name;
+        continue;
+      }
+      groups.set(key, {
         id: String(raw.id),
-        date:
-          (raw.purchased_at as string | null) ??
-          (raw.created_at as string) ??
-          new Date().toISOString(),
+        date,
         memberId: (raw.profile_id as string | null) ?? null,
         memberName,
         productId: (raw.product_id as string | null) ?? null,
-        productName,
-        amount,
-        paymentMethod: isRecordedYocoPayment(yoco) ? "yoco" : "manual",
+        productName: partName,
+        amount:
+          paidWhere === "online"
+            ? Number(product?.price_zar ?? 0) || 0
+            : paidWhere === "comp"
+              ? 0
+              : paid,
+        paymentMethod: paidWhere === "online" ? "yoco" : "manual",
         yocoPaymentId: yoco,
         refundedAt: (raw.refunded_at as string | null) ?? null,
         refundReason: (raw.refund_reason as string | null) ?? null,
-      };
-    });
+        creditIds: [String(raw.id)],
+        paidWhere,
+        note: (raw.payment_note as string | null) ?? null,
+      });
+    }
+
+    // Upgrades to Access to: Longkloof & Green Point done in the dashboard.
+    const { data: upgradeData } = await upgradesPromise;
+    for (const u of (upgradeData ?? []) as Record<string, unknown>[]) {
+      const profile = (Array.isArray(u.profile) ? u.profile[0] : u.profile) as
+        | { first_name?: string; last_name?: string }
+        | null;
+      const where = String(u.paid_where);
+      groups.set(`upgrade|${u.id}`, {
+        id: `upgrade-${u.id}`,
+        date: String(u.created_at),
+        memberId: (u.profile_id as string | null) ?? null,
+        memberName: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim() || "—",
+        productId: null,
+        productName: `Upgrade: Longkloof & Green Point${u.product_name ? ` (${u.product_name})` : ""}`,
+        amount: Number(u.amount_zar ?? 0) || 0,
+        paymentMethod: "manual",
+        yocoPaymentId: null,
+        refundedAt: null,
+        refundReason: null,
+        creditIds: [],
+        paidWhere: where === "green_point" ? "green_point" : where === "studio" ? "studio" : "comp",
+        note: (u.reference as string | null) ?? null,
+      });
+    }
+
+    const mapped: TxRow[] = [...groups.values()];
 
     setRows(mapped);
 
@@ -237,7 +311,7 @@ function TransactionsPage() {
           `${r.memberName} ${r.productName} ${r.yocoPaymentId ?? ""} ${yocoCheckoutId(r.yocoPaymentId) ?? ""} ${yocoReferenceId(r.yocoPaymentId) ?? ""}`.toLowerCase();
         if (!hay.includes(ql)) return false;
       }
-      if (methodFilter !== "all" && r.paymentMethod !== methodFilter) return false;
+      if (methodFilter !== "all" && r.paidWhere !== methodFilter) return false;
       if (dateFrom && r.date < new Date(dateFrom).toISOString()) return false;
       if (dateTo) {
         const end = new Date(dateTo);
@@ -297,6 +371,14 @@ function TransactionsPage() {
             reason: refundReason.trim() || undefined,
           }),
           { yocoRefundId: null, amountZar: refundTarget.amount });
+      // The other parts of the same pack are marked refunded too (the money is only refunded once).
+      for (const otherId of refundTarget.creditIds.filter((cid) => cid !== refundTarget.id)) {
+        await markManualCreditRefunded({
+          userCreditId: otherId,
+          amountZar: 0,
+          reason: refundReason.trim() || "refunded_with_pack",
+        }).catch(() => undefined);
+      }
 
       const at = new Date().toISOString();
       setRows((prev) =>
@@ -339,7 +421,7 @@ function TransactionsPage() {
       r.memberName,
       r.productName,
       r.amount.toString(),
-      r.paymentMethod === "yoco" ? "Yoco" : "Admin assigned",
+      PAID_WHERE_LABEL[r.paidWhere],
       yocoCheckoutId(r.yocoPaymentId) ?? "",
       yocoReferenceId(r.yocoPaymentId) ?? "",
     ]);
@@ -385,13 +467,15 @@ function TransactionsPage() {
           />
         </div>
         <Select value={methodFilter} onValueChange={setMethodFilter}>
-          <SelectTrigger className="w-full sm:w-44">
+          <SelectTrigger className="w-full sm:w-52">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All payment methods</SelectItem>
-            <SelectItem value="yoco">Yoco</SelectItem>
-            <SelectItem value="manual">Admin assigned</SelectItem>
+            <SelectItem value="all">Paid anywhere</SelectItem>
+            <SelectItem value="online">Online (Yoco)</SelectItem>
+            <SelectItem value="green_point">Paid at De Waterkant</SelectItem>
+            <SelectItem value="studio">Paid at Longkloof desk</SelectItem>
+            <SelectItem value="comp">Comp / assigned</SelectItem>
           </SelectContent>
         </Select>
         <Input
@@ -511,8 +595,9 @@ function TransactionsPage() {
                   </td>
                   <td className="px-5 py-3">
                     <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
-                      {paymentMethodLabel(r.paymentMethod)}
+                      {PAID_WHERE_LABEL[r.paidWhere]}
                     </span>
+                    {r.note ? <p className="mt-1 text-[10px] text-muted-foreground">{r.note}</p> : null}
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">
                     {r.refundedAt ? (
@@ -522,6 +607,8 @@ function TransactionsPage() {
                       >
                         Refunded
                       </span>
+                    ) : r.creditIds.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">—</span>
                     ) : (
                       <Button
                         type="button"
