@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { getUser, supabase } from "@/lib/supabase";
+import { invalidateMemberBookingCaches } from "@/lib/queries/invalidate";
 
 /** May challenge stamps are written on studio check-in (see upsertMayChallengeCheckIn), not here. */
 
@@ -226,6 +227,8 @@ function PaymentSuccessPage() {
           }
           return;
         }
+        // The new booking (and its QR code) must show straight away in My Bookings and on Home.
+        invalidateMemberBookingCaches(profileId);
         if (!cancelled) {
           setState({
             status: "success_class_booked",

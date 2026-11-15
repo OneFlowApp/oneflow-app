@@ -74,5 +74,9 @@ export function useMemberBookings(userId: string | undefined) {
     queryFn: () => fetchMemberBookings(userId!),
     enabled: !!userId,
     staleTime: 30_000,
+    // Always re-check when My Bookings opens or the app comes back to the front, so a
+    // cancel and rebook never leaves an old QR code on screen.
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 }

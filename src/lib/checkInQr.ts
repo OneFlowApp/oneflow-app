@@ -36,3 +36,34 @@ export async function checkInBookingByQrRpc(
 
   return { result: data as QrCheckInRpcResult, rpcError: null };
 }
+
+/**
+ * A member who cancelled and rebooked the same class may still show the old QR code.
+ * Given the scanned (cancelled) booking's token, return the qr_token of that member's
+ * current confirmed booking for the same class, if there is one.
+ */
+export async function findRebookedQrToken(
+  client: SupabaseClient,
+  cancelledToken: string,
+): Promise<string | null> {
+  const { data: old, error } = await client
+    .from("bookings")
+    .select("profile_id, class_id, status")
+    .eq("qr_token", cancelledToken)
+    .maybeSingle();
+  if (error || !old || old.status !== "cancelled" || !old.profile_id || !old.class_id) return null;
+
+  const { data: current, error: currentError } = await client
+    .from("bookings")
+    .select("qr_token")
+    .eq("profile_id", old.profile_id)
+    .eq("class_id", old.class_id)
+    .eq("status", "confirmed")
+    .not("qr_token", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (currentError || !current?.qr_token) return null;
+  const next = String(current.qr_token);
+  return next === cancelledToken ? null : next;
+}

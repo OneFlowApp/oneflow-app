@@ -15,7 +15,7 @@ import { useClassCatalog } from "@/contexts/classCatalog";
 import { useMaxWidth } from "@/hooks/use-max-width";
 import { cn } from "@/lib/utils";
 import { awardClassesAttendedBadges } from "@/lib/badges";
-import { checkInBookingByQrRpc } from "@/lib/checkInQr";
+import { checkInBookingByQrRpc, findRebookedQrToken } from "@/lib/checkInQr";
 import { fetchRosterMemberAddonAccess } from "@/components/admin/RosterAddonPills";
 import { jhbDayBounds } from "@/lib/jhbTime";
 import { upsertMayChallengeCheckIn } from "@/lib/mayChallengeCheckIn";
@@ -322,7 +322,7 @@ function CheckInPage() {
     await loadData();
   };
 
-  const handleQrScan = async (decodedText: string) => {
+  const handleQrScan = async (decodedText: string, isRebookRetry = false) => {
     const token = parseQrCheckInToken(decodedText);
     if (!token) {
       toastQrIssue("parse", "Could not read this QR code. Show the code from My Bookings in the app.");
@@ -349,6 +349,14 @@ function CheckInPage() {
         const code = rpcResult.code ?? "error";
         const message =
           rpcResult.message ?? "Could not check in with this code.";
+        if (code === "cancelled" && !isRebookRetry) {
+          // Old code from a booking the member cancelled and then rebooked: check in the new one.
+          const rebookedToken = await findRebookedQrToken(supabase, token);
+          if (rebookedToken) {
+            await handleQrScan(rebookedToken, true);
+            return;
+          }
+        }
         if (code === "already") {
           toastQrIssue("already-in", message, "warning");
         } else {
@@ -411,6 +419,13 @@ function CheckInPage() {
     }
 
     if (status === "cancelled") {
+      if (!isRebookRetry) {
+        const rebookedToken = await findRebookedQrToken(supabase, token);
+        if (rebookedToken) {
+          await handleQrScan(rebookedToken, true);
+          return;
+        }
+      }
       toastQrIssue(`cancelled:${token}`, "This booking was cancelled.");
       return;
     }
