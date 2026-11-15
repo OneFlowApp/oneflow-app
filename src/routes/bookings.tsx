@@ -32,7 +32,7 @@ function uuidOrUndefined(v: unknown): string | undefined {
 
 export const Route = createFileRoute("/bookings")({
   validateSearch: (raw: Record<string, unknown>) => ({
-    /** When set (e.g. from home “Upcoming”), scroll to this booking and show its check-in QR. */
+    /** When set (e.g. from home “Upcoming”), scroll to this booking. */
     booking: uuidOrUndefined(raw.booking),
   }),
   component: BookingsPage,
@@ -56,7 +56,6 @@ type RawBooking = {
 type BookingListRow = {
   id: string;
   status: string;
-  qrToken: string | null;
   className: string;
   classType: ClassType;
   location: string;
@@ -117,7 +116,6 @@ function BookingsPage() {
         return {
           id: raw.id,
           status: raw.status,
-          qrToken: raw.qr_token ?? null,
           className: (cls ? classTitle(cls) : "") || "Class",
           classType: displayClassType(
             (cls ? classTypeSlugFor(cls) : null) ?? cls?.class_type,
