@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { addClassToCalendar } from "@/lib/addToCalendar";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, MapPin, Share2, X } from "lucide-react";
+import { CalendarPlus, Clock, MapPin, Share2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { CancelBookingButton } from "@/components/CancelBookingButton";
@@ -59,6 +60,7 @@ type BookingListRow = {
   classType: ClassType;
   location: string;
   startsAt: Date;
+  endsAt: Date | null;
   guideFirst: string | null;
   guideName: string | null;
 };
@@ -120,6 +122,7 @@ function BookingsPage() {
           ),
           location: cls?.location ?? "",
           startsAt: new Date(cls?.starts_at ?? Date.now()),
+          endsAt: cls?.ends_at ? new Date(cls.ends_at) : null,
           guideFirst: guideFirstFromClass(cls),
           guideName: guideNameFromClass(cls),
         };
@@ -300,6 +303,23 @@ function BookingsPage() {
                     className="mt-3"
                     onCancelled={refreshBookings}
                   />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      addClassToCalendar({
+                        id: b.id,
+                        title: b.className,
+                        startsAt: b.startsAt,
+                        endsAt: b.endsAt,
+                        location: b.location,
+                        guide: b.guideName,
+                      })
+                    }
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[#5f7a52] underline-offset-2 hover:underline"
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" aria-hidden />
+                    Add to calendar
+                  </button>
                 </article>
               ))}
 

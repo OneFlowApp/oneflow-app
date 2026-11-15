@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { addClassToCalendar } from "@/lib/addToCalendar";
 import { Link } from "@tanstack/react-router";
 import { Clock, MapPin, Users, Sparkles, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -366,7 +367,21 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
       await afterBookingConfirmed(booking.id as string);
       console.info("[BookingSheet] free class booking complete", { bookingId: booking.id });
-      toast.success("You're booked! See you on the mat 🌿");
+      toast.success("You're booked! See you on the mat 🌿", {
+      action: {
+        label: "Add to calendar",
+        onClick: () =>
+          addClassToCalendar({
+            id: session.id,
+            title: classTitle(session),
+            startsAt: session.starts_at,
+            endsAt: session.ends_at,
+            location: session.location ?? null,
+            guide: session.guide_name ?? null,
+          }),
+      },
+      duration: 10000,
+      });
       setLoading(false);
       onBookingConfirmed?.(session.id);
       onOpenChange(false);
@@ -427,6 +442,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
 
     toast.success("Booking confirmed!", {
       description: `${classTitle(session)} · ${dateLine} at ${timeLine}`,
+      action: {
+        label: "Add to calendar",
+        onClick: () =>
+          addClassToCalendar({
+            id: session.id,
+            title: classTitle(session),
+            startsAt: session.starts_at,
+            endsAt: session.ends_at,
+            location: session.location ?? null,
+            guide: session.guide_name ?? null,
+          }),
+      },
+      duration: 10000,
     });
     setLoading(false);
     onBookingConfirmed?.(session.id);
