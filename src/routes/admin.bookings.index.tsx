@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { isEarlyCancellation } from "@/lib/earlyCancellation";
+import { bookingPaymentLabel, fetchBookingCredits, type BookingCreditInfo } from "@/lib/bookingPaymentLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { STUDIO_ROOMS } from "@/lib/studioRooms";
 import {
@@ -84,6 +85,7 @@ type BookingRowRaw = {
   profile_id: string | null;
   class_id: string;
   payment_method: string | null;
+  credit_id?: string | null;
   mat_addon: boolean | null;
   towel_addon: boolean | null;
   profiles:
@@ -137,6 +139,7 @@ function shortMemberName(first: string, last: string) {
 function normalizeBooking(
   raw: BookingRowRaw,
   addonAccess: RosterMemberAddonAccess,
+  creditInfo?: Map<string, BookingCreditInfo>,
 ): AdminBookingRow | null {
   const prof = one(raw.profiles);
   const fn = prof?.first_name?.trim() ?? "";
@@ -158,7 +161,7 @@ function normalizeBooking(
     memberShort: shortMemberName(fn, ln || ""),
     status,
     classStartsAtIso: cls.starts_at,
-    creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
+    creditLabel: bookingPaymentLabel(raw.payment_method, raw.credit_id ? creditInfo?.get(raw.credit_id) : null),
     matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
     towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
     hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
@@ -315,6 +318,7 @@ function BookingsPage() {
         profile_id,
         class_id,
         payment_method,
+        credit_id,
         mat_addon,
         towel_addon,
         profiles ( first_name, last_name, role ),
@@ -334,8 +338,9 @@ function BookingsPage() {
     }
 
     const rawRows = (bookingsData ?? []) as unknown as BookingRowRaw[];
+    const creditInfo = await fetchBookingCredits(supabase, rawRows.map((r) => r.credit_id));
     const mapped = rawRows
-      .map((row) => normalizeBooking(row, addonAccess))
+      .map((row) => normalizeBooking(row, addonAccess, creditInfo))
       .filter((r): r is AdminBookingRow => r !== null);
     setBookings(mapped);
     setLoading(false);

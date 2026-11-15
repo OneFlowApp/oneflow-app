@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { canSeeMemberPrivateDetails, effectiveRole } from "@/lib/roleAccess";
 import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
 import { isEarlyCancellation } from "@/lib/earlyCancellation";
+import { bookingPaymentLabel, fetchBookingCredits } from "@/lib/bookingPaymentLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Undo2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
@@ -162,7 +163,7 @@ function BookingClassDetailPage() {
     const { data: bookingData, error: bookingErr } = await supabase
       .from("bookings")
       .select(
-        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
       )
       .eq("class_id", classId)
       .order("created_at", { ascending: true });
@@ -184,6 +185,7 @@ function BookingClassDetailPage() {
       profile_id: string | null;
       class_id: string;
       payment_method: string | null;
+      credit_id?: string | null;
       mat_addon: boolean | null;
       towel_addon: boolean | null;
       created_at: string | null;
@@ -197,7 +199,10 @@ function BookingClassDetailPage() {
         | null;
     }>;
 
-    const addonAccess = await fetchRosterMemberAddonAccess(supabase);
+    const [addonAccess, creditInfo] = await Promise.all([
+      fetchRosterMemberAddonAccess(supabase),
+      fetchBookingCredits(supabase, raw.map((r) => r.credit_id)),
+    ]);
 
     const rows: BookingRow[] = [];
     for (const r of raw) {
@@ -219,7 +224,7 @@ function BookingClassDetailPage() {
         memberShort: shortMemberName(fn, ln || ""),
         status,
         classStartsAtIso: clsOne.starts_at,
-        creditLabel: r.payment_method?.replace(/_/g, " ") ?? "—",
+        creditLabel: bookingPaymentLabel(r.payment_method, r.credit_id ? creditInfo.get(r.credit_id) : null),
         matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
         towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
         hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
