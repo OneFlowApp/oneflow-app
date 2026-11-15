@@ -25,6 +25,7 @@ import {
   ymdInTimeZone,
 } from "@/lib/timezone";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
+import { GreenPointVisitDialog } from "@/components/admin/GreenPointVisitDialog";
 import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
 import { TypeBadge } from "@/components/TypeBadge";
 import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
@@ -259,6 +260,7 @@ function BookingsPage() {
     }
   }, [selectedDay, query, bookingsSort, sessionTypeFilter, sessionGuideFilter, sessionLocationFilter]);
   const [walkInOpen, setWalkInOpen] = useState(false);
+  const [greenPointOpen, setGreenPointOpen] = useState(false);
 
   const nowMs = useNowMs();
   const todayKey = ymdInTimeZone(new Date(), STUDIO_TIMEZONE);
@@ -516,6 +518,13 @@ function BookingsPage() {
             </button>
             <button
               type="button"
+              onClick={() => setGreenPointOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border-2 bg-card px-3.5 py-2 text-sm font-semibold transition hover:bg-muted/60 sm:px-4"
+            >
+              Green Point visit
+            </button>
+            <button
+              type="button"
               onClick={exportCsv}
               className="inline-flex items-center gap-2 rounded-xl border-2 bg-card px-3.5 py-2 text-sm font-semibold transition hover:bg-muted/60 sm:px-4"
               style={{ borderColor: SAGE, color: SAGE }}
@@ -733,6 +742,7 @@ function BookingsPage() {
         onOpenChange={setWalkInOpen}
         onDone={() => void loadWeek()}
       />
+      <GreenPointVisitDialog open={greenPointOpen} onOpenChange={setGreenPointOpen} />
     </div>
   );
 }

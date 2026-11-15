@@ -1,11 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { SelfCheckInBoard } from "@/components/admin/SelfCheckInBoard";
-import { WalkInSheet } from "@/components/admin/WalkInSheet";
-import { GreenPointVisitDialog } from "@/components/admin/GreenPointVisitDialog";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
@@ -58,8 +55,6 @@ function CheckInPage() {
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [walkInOpen, setWalkInOpen] = useState(false);
-  const [greenPointOpen, setGreenPointOpen] = useState(false);
   const [checkinOpenMinutes, setCheckinOpenMinutes] = useState(DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE);
   const nowMs = useNowMs();
 
@@ -244,32 +239,8 @@ function CheckInPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-[599px]:overflow-y-auto max-[599px]:scroll-touch">
-      <PageHeader
-        title="Check-In"
-        actions={
-          <div className="flex gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => setGreenPointOpen(true)}>
-              Green Point visit
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-              onClick={() => setWalkInOpen(true)}
-            >
-              <UserPlus className="h-4 w-4 shrink-0" aria-hidden />
-              Walk-in
-            </Button>
-          </div>
-        }
-      />
-      <GreenPointVisitDialog open={greenPointOpen} onOpenChange={setGreenPointOpen} />
+      <PageHeader title="Check-In" />
 
-      <WalkInSheet
-        open={walkInOpen}
-        onOpenChange={setWalkInOpen}
-        onDone={() => void loadData()}
-      />
 
       {loading && !hasLoaded ? (
         <div className="py-16 text-center text-base text-muted-foreground">Loading check in…</div>
