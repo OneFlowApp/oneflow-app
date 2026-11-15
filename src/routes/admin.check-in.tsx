@@ -269,6 +269,7 @@ function CheckInPage() {
         open={walkInOpen}
         onOpenChange={setWalkInOpen}
         onDone={() => void loadData()}
+        todayOnly
       />
 
       {loading && !hasLoaded ? (

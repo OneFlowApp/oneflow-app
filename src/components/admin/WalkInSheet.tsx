@@ -121,9 +121,11 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDone: () => void;
+  /** Check-in tablet: only today's classes (studio time). */
+  todayOnly?: boolean;
 };
 
-export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
+export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false }: Props) {
   const { profile: viewer } = useAuth();
   const showPrivate = canSeeMemberPrivateDetails(viewer);
   const [mode, setMode] = useState<WalkInMode>("existing");
@@ -177,7 +179,9 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
         .gte("starts_at", sinceIso)
         .order("starts_at")
         .limit(1000);
-      const data = (raw ?? []) as FutureClassRow[];
+      const jhbDay = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+      const todayKey = jhbDay(new Date().toISOString());
+      const data = ((raw ?? []) as FutureClassRow[]).filter((c) => !todayOnly || jhbDay(c.starts_at) === todayKey);
 
       if (error) {
         console.error("walk-in: future classes load failed", error);
@@ -193,7 +197,7 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
       setClassId(defaultId ?? rows[0]?.id ?? "");
       setLoadingClasses(false);
     })();
-  }, [open]);
+  }, [open, todayOnly]);
 
   useEffect(() => {
     if (!open || mode !== "existing" || selectedMember) {
@@ -623,7 +627,9 @@ export function WalkInSheet({ open, onOpenChange, onDone }: Props) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Defaults to the class running now or the next one. Finished classes from the last 14 days are listed too.
+              {todayOnly
+                  ? "Today’s classes only. Defaults to the class running now or the next one."
+                  : "Defaults to the class running now or the next one. Finished classes from the last 14 days are listed too."}
             </p>
           </div>
 
