@@ -33,6 +33,7 @@ const SETTING_KEYS = [
   "studio_phone",
   "studio_whatsapp",
   "studio_email",
+  "studio_address",
   "late_cancel_fee_zar",
   "no_show_fee_zar",
   "late_cancel_window_minutes",
@@ -64,6 +65,7 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   studio_phone: "+27 82 553 3033",
   studio_whatsapp: "+27 82 553 3033",
   studio_email: "info@oneflow.co.za",
+  studio_address: "",
   late_cancel_fee_zar: "100",
   no_show_fee_zar: "200",
   late_cancel_window_minutes: "120",
@@ -271,6 +273,11 @@ function SettingsPage() {
             type: "tel",
           },
           { key: "studio_email" as SettingKey, label: "Email", type: "email" },
+          {
+            key: "studio_address" as SettingKey,
+            label: "Studio address (shown in booking emails)",
+            type: "text",
+          },
         ],
       },
       {
