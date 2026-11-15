@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { QrCode, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { QRScanner } from "@/components/admin/QRScanner";
 import { CheckInClassAccordion } from "@/components/admin/CheckInClassAccordion";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
 import { GreenPointVisitDialog } from "@/components/admin/GreenPointVisitDialog";
@@ -12,7 +11,6 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { classTitle } from "@/lib/classTitle";
 import { useClassCatalog } from "@/contexts/classCatalog";
-import { useMaxWidth } from "@/hooks/use-max-width";
 import { cn } from "@/lib/utils";
 import { awardClassesAttendedBadges } from "@/lib/badges";
 import { checkInBookingByQrRpc } from "@/lib/checkInQr";
@@ -70,7 +68,6 @@ type TodayClass = {
 function CheckInPage() {
   // Subscribe so a class-type rename repaints the roster headings.
   useClassCatalog();
-  const stackLayout = useMaxWidth(600);
   const { profile } = useAuth();
   const showOctivVitalityQr = canShowOctivVitalityQr(profile);
   const search = Route.useSearch();
@@ -494,7 +491,10 @@ function CheckInPage() {
         <div
           className={cn(
             "flex min-h-0 flex-1 flex-col gap-4",
-            "min-[600px]:grid min-[600px]:grid-cols-[minmax(260px,340px)_minmax(0,1fr)] min-[600px]:gap-4 min-[600px]:overflow-hidden",
+            "min-[600px]:grid min-[600px]:gap-4 min-[600px]:overflow-hidden",
+            showOctivVitalityQr
+              ? "min-[600px]:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]"
+              : "min-[600px]:grid-cols-1",
           )}
         >
           <div
@@ -534,33 +534,13 @@ function CheckInPage() {
             </div>
           </div>
 
-          <div className="flex min-h-0 min-w-0 flex-col min-[600px]:overflow-hidden">
-            <div
-              className={cn(
-                "flex flex-col rounded-2xl border border-border bg-card p-3",
-                "min-[600px]:flex min-[600px]:min-h-0 min-[600px]:flex-1 min-[600px]:justify-center",
-              )}
-            >
-              <div className="mb-3 flex w-full shrink-0 items-center gap-2 text-sm font-semibold min-[600px]:mb-4">
-                <QrCode className="h-4 w-4 shrink-0 text-[#a3b693]" aria-hidden />
-                Self check-in QR
+          {showOctivVitalityQr ? (
+            <div className="flex min-h-0 min-w-0 flex-col min-[600px]:overflow-hidden">
+              <div className="flex flex-col rounded-2xl border border-border bg-card p-3">
+                <OctivVitalityCheckInButton />
               </div>
-              <div className="flex shrink-0 flex-col items-center px-1 py-2">
-                <QRScanner
-                  defaultFacing={stackLayout ? "environment" : "user"}
-                  size={stackLayout ? "default" : "large"}
-                  showFlipButton
-                  className="w-full max-w-[min(100%,22rem)]"
-                  onScan={(text: string) => void handleQrScan(text)}
-                />
-              </div>
-              <p className="mt-3 shrink-0 text-center text-sm text-muted-foreground">
-                Hold the member&apos;s booking QR inside the green frame, about arm&apos;s length
-                away.
-              </p>
-              {showOctivVitalityQr ? <OctivVitalityCheckInButton /> : null}
             </div>
-          </div>
+          ) : null}
         </div>
       )}
     </div>
