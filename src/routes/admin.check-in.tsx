@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
-import { CheckInClassAccordion } from "@/components/admin/CheckInClassAccordion";
+import { SelfCheckInBoard } from "@/components/admin/SelfCheckInBoard";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
 import { GreenPointVisitDialog } from "@/components/admin/GreenPointVisitDialog";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { classTitle } from "@/lib/classTitle";
 import { useClassCatalog } from "@/contexts/classCatalog";
-import { cn } from "@/lib/utils";
 import { fetchRosterMemberAddonAccess } from "@/components/admin/RosterAddonPills";
 import { jhbDayBounds } from "@/lib/jhbTime";
 import {
@@ -28,7 +27,6 @@ import {
   parseCheckinOpenMinutesBefore,
 } from "@/lib/checkInWindow";
 import { useNowMs } from "@/hooks/use-now-ms";
-import { useScrollToLiveClass } from "@/hooks/use-scroll-to-live-class";
 export const Route = createFileRoute("/admin/check-in")({
   validateSearch: (raw: Record<string, unknown>) => ({
     class: typeof raw.class === "string" ? raw.class : undefined,
@@ -57,12 +55,12 @@ function CheckInPage() {
   const search = Route.useSearch();
   const [todayClasses, setTodayClasses] = useState<TodayClass[]>([]);
   const [roster, setRoster] = useState<RosterRow[]>([]);
-  const [expandedClassIds, setExpandedClassIds] = useState<Set<string>>(() => new Set());
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [greenPointOpen, setGreenPointOpen] = useState(false);
   const [checkinOpenMinutes, setCheckinOpenMinutes] = useState(DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE);
-  const classListRef = useRef<HTMLDivElement>(null);
   const nowMs = useNowMs();
 
   const orderedClasses = useMemo(
@@ -75,23 +73,14 @@ function CheckInPage() {
     [todayClasses, nowMs],
   );
 
-  useScrollToLiveClass(
-    nextUpcomingClassId,
-    !loading && orderedClasses.length > 0,
-    classListRef,
-  );
 
   useEffect(() => {
-    if (!search.class) return;
-    setExpandedClassIds((prev) => new Set(prev).add(search.class!));
+    if (search.class) setSelectedClassId(search.class);
   }, [search.class]);
 
   useEffect(() => {
     if (loading || !nextUpcomingClassId) return;
-    setExpandedClassIds((prev) => {
-      if (prev.size > 0) return prev;
-      return new Set([nextUpcomingClassId]);
-    });
+    setSelectedClassId((prev) => prev ?? nextUpcomingClassId);
   }, [loading, nextUpcomingClassId]);
 
   const rosterByClassId = useMemo(() => {
@@ -137,6 +126,8 @@ function CheckInPage() {
       setTodayClasses([]);
       setRoster([]);
       setLoading(false);
+      setHasLoaded(true);
+    setHasLoaded(true);
       return;
     }
 
@@ -164,6 +155,8 @@ function CheckInPage() {
     if (classIds.length === 0) {
       setRoster([]);
       setLoading(false);
+      setHasLoaded(true);
+    setHasLoaded(true);
       return;
     }
 
@@ -193,6 +186,8 @@ function CheckInPage() {
       toast.error(supabaseErrorMessage(bookingsError, "Could not load bookings"));
       setRoster([]);
       setLoading(false);
+      setHasLoaded(true);
+    setHasLoaded(true);
       return;
     }
 
@@ -202,6 +197,7 @@ function CheckInPage() {
       .filter((r): r is RosterRow => r !== null);
     setRoster(normalized);
     setLoading(false);
+    setHasLoaded(true);
   }, []);
 
   useEffect(() => {
@@ -246,15 +242,6 @@ function CheckInPage() {
     });
   }, [orderedClasses, rosterByClassId, checkinOpenMinutes, nowMs]);
 
-  const toggleClassExpanded = (classId: string, open: boolean) => {
-    setExpandedClassIds((prev) => {
-      const next = new Set(prev);
-      if (open) next.add(classId);
-      else next.delete(classId);
-      return next;
-    });
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-[599px]:overflow-y-auto max-[599px]:scroll-touch">
       <PageHeader
@@ -284,51 +271,18 @@ function CheckInPage() {
         onDone={() => void loadData()}
       />
 
-      {loading ? (
-        <div className="py-16 text-center text-sm text-muted-foreground">Loading check-in…</div>
+      {loading && !hasLoaded ? (
+        <div className="py-16 text-center text-base text-muted-foreground">Loading check in…</div>
       ) : (
-        <div
-          className={cn(
-            "flex min-h-0 flex-1 flex-col gap-4",
-            "min-[600px]:overflow-hidden",
-          )}
-        >
-          <div
-            className={cn(
-              "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card p-3",
-              "min-[600px]:min-h-0",
-            )}
-          >
-            <p className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Today&apos;s classes
-            </p>
-            <div
-              ref={classListRef}
-              className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-0.5"
-            >
-              {sessions.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  No classes scheduled for today.
-                </p>
-              ) : (
-                sessions.map((s) => (
-                  <div key={s.key} data-live-class-id={s.key}>
-                    <CheckInClassAccordion
-                    key={s.key}
-                    session={s}
-                    roster={rosterByClassId.get(s.key) ?? []}
-                    expanded={expandedClassIds.has(s.key)}
-                    onExpandedChange={(open) => toggleClassExpanded(s.key, open)}
-                    loading={loading}
-                    onUpdated={loadData}
-                    openMinutesBefore={checkinOpenMinutes}
-                  />
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-1 pb-2 max-[599px]:overflow-visible">
+          <SelfCheckInBoard
+            sessions={sessions}
+            rosterByClassId={rosterByClassId}
+            selectedId={selectedClassId}
+            onSelect={setSelectedClassId}
+            onUpdated={loadData}
+            openMinutesBefore={checkinOpenMinutes}
+          />
         </div>
       )}
     </div>
