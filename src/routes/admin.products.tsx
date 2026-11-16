@@ -244,10 +244,10 @@ function AdminProductTableRow({
   return (
     <tr className="border-t border-border">
       <td className="max-w-[140px] truncate px-4 py-3 font-semibold sm:max-w-xs sm:px-5 md:max-w-md">
-        <div className="flex items-center gap-2">
-          <span className="truncate">{p.name}</span>
+        <div className="flex min-w-0 flex-col items-start gap-1 sm:flex-row sm:items-center sm:gap-2">
+          <span className="block max-w-full truncate">{p.name}</span>
           {p.access_scope === "open_access" && (
-            <span className="inline-flex shrink-0 rounded-full bg-[#3d4f36] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+            <span className="inline-flex max-w-full shrink-0 whitespace-normal rounded-full bg-[#3d4f36] px-2 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide text-white sm:whitespace-nowrap">
               Longkloof &amp; Green Point
             </span>
           )}
