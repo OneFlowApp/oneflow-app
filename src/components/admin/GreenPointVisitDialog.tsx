@@ -26,6 +26,13 @@ type Balance = {
   visits_used: number;
 };
 
+/** Reformer isn't offered at Green Point, and unlimited packs have no credits to tick off. */
+function blockedReason(b: Balance): string | null {
+  if (/reformer/i.test(b.pack)) return "Reformer isn't available at Green Point";
+  if (b.is_unlimited) return "Unlimited packs have no credits to tick off";
+  return null;
+}
+
 function nameOf(p: Person) {
   return [p.first_name, p.last_name].filter(Boolean).join(" ") || "Member";
 }
@@ -206,7 +213,7 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
                 {balances.map((b) => (
                   <li
                     key={b.credit_id}
-                    className={cn("rounded-lg border border-border p-3", b.is_unlimited && "opacity-50")}
+                    className={cn("rounded-lg border border-border p-3", blockedReason(b) && "opacity-50")}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -223,8 +230,8 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
                       <Button
                         type="button"
                         size="sm"
-                        disabled={busyId !== null || b.is_unlimited}
-                        title={b.is_unlimited ? "Unlimited packs have no credits to tick off" : undefined}
+                        disabled={busyId !== null || blockedReason(b) !== null}
+                        title={blockedReason(b) ?? undefined}
                         className={cn("shrink-0 bg-[#a3b693] text-white hover:bg-[#8fa67d]")}
                         onClick={() => void tick(b)}
                       >
