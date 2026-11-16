@@ -123,9 +123,11 @@ type Props = {
   onDone: () => void;
   /** Check-in tablet: only today's classes (studio time). */
   todayOnly?: boolean;
+  /** Opened from a class's booking page: that class is listed first and picked. */
+  currentClassId?: string;
 };
 
-export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false }: Props) {
+export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, currentClassId }: Props) {
   const { profile: viewer } = useAuth();
   const showPrivate = canSeeMemberPrivateDetails(viewer);
   const [mode, setMode] = useState<WalkInMode>("existing");
@@ -191,13 +193,27 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false }: P
         return;
       }
 
-      const rows = (data ?? []) as FutureClassRow[];
+      let rows = (data ?? []) as FutureClassRow[];
+      // The class whose page you're on comes first (fetched if it's older than the list).
+      if (currentClassId) {
+        let current = rows.find((c) => c.id === currentClassId);
+        if (!current) {
+          const { data: one } = await supabase
+            .from("classes")
+            .select("id, name, starts_at, ends_at, class_type, guide_name, location")
+            .eq("id", currentClassId)
+            .maybeSingle();
+          current = (one as FutureClassRow | null) ?? undefined;
+        }
+        if (current) rows = [current, ...rows.filter((c) => c.id !== currentClassId)];
+      }
       setFutureClasses(rows);
-      const defaultId = pickNextUpcomingClassId(rows);
+      const defaultId =
+        currentClassId && rows[0]?.id === currentClassId ? currentClassId : pickNextUpcomingClassId(rows);
       setClassId(defaultId ?? rows[0]?.id ?? "");
       setLoadingClasses(false);
     })();
-  }, [open, todayOnly]);
+  }, [open, todayOnly, currentClassId]);
 
   useEffect(() => {
     if (!open || mode !== "existing" || selectedMember) {

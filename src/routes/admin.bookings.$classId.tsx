@@ -505,7 +505,12 @@ function BookingClassDetailPage() {
         </>
       )}
 
-      <WalkInSheet open={walkInOpen} onOpenChange={setWalkInOpen} onDone={() => void load()} />
+      <WalkInSheet
+        open={walkInOpen}
+        onOpenChange={setWalkInOpen}
+        onDone={() => void load()}
+        currentClassId={classId}
+      />
       {canOpenProfile ? (
         <CustomerProfileSheet
           customerId={profileId}
