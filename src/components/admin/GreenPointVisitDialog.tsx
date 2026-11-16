@@ -204,7 +204,10 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
             ) : (
               <ul className="space-y-2">
                 {balances.map((b) => (
-                  <li key={b.credit_id} className="rounded-lg border border-border p-3">
+                  <li
+                    key={b.credit_id}
+                    className={cn("rounded-lg border border-border p-3", b.is_unlimited && "opacity-50")}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="flex items-center gap-1.5 text-sm font-semibold">
@@ -220,7 +223,8 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
                       <Button
                         type="button"
                         size="sm"
-                        disabled={busyId !== null}
+                        disabled={busyId !== null || b.is_unlimited}
+                        title={b.is_unlimited ? "Unlimited packs have no credits to tick off" : undefined}
                         className={cn("shrink-0 bg-[#a3b693] text-white hover:bg-[#8fa67d]")}
                         onClick={() => void tick(b)}
                       >
