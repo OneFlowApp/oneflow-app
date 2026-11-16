@@ -41,6 +41,7 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
   const [person, setPerson] = useState<Person | null>(null);
   const [balances, setBalances] = useState<Balance[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const today = ymdInTimeZone(new Date(), STUDIO_TIMEZONE);
   const [usedOn, setUsedOn] = useState(today);
 
@@ -81,9 +82,11 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
 
   const loadBalances = async (p: Person) => {
     setBalances(null);
+    setLoadError(null);
     const { data, error } = await supabase.rpc("green_point_balances", { p_profile_id: p.id });
     if (error) {
       toast.error(supabaseErrorMessage(error, "Could not load this member's packs"));
+      setLoadError(supabaseErrorMessage(error, "Could not load this member's packs"));
       setBalances([]);
       return;
     }
@@ -190,6 +193,10 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
             </label>
             {balances === null ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            ) : loadError ? (
+              <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+                Couldn&apos;t load this member&apos;s packs: {loadError}
+              </p>
             ) : balances.length === 0 ? (
               <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
                 No Longkloof &amp; Green Point packs. This member&apos;s packs are for Longkloof only.
