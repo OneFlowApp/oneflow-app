@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { BadgeCheck, Check, ChevronDown, Copy, ExternalLink, Star, X } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, Copy, ExternalLink, MapPin, Star, X } from "lucide-react";
 import { toast } from "sonner";
 import { getUser, supabase } from "@/lib/supabase";
 import logo from "@/assets/oneflow-logo.webp";
@@ -131,22 +131,48 @@ type Balance = {
 type GreenPointVisit = { id: string; credit_id: string; used_at: string };
 
 /** Up to 20 credits show as dots, used ones ticked off; bigger packs show a count. */
-function Tally({ total, left }: { total: number; left: number }) {
+/**
+ * One circle per credit: full = still to use, tick = used at Longkloof, gold pin = used at Green Point.
+ */
+function Tally({ total, left, greenPoint = 0 }: { total: number; left: number; greenPoint?: number }) {
   if (total <= 0) return null;
-  if (total > 20) return <span className="text-xs text-white/80">{left} of {total} left</span>;
+  const used = Math.max(0, total - left);
+  const gp = Math.min(greenPoint, used);
+  if (total > 20) {
+    return (
+      <span className="text-xs text-white/80">
+        {left} of {total} left{gp > 0 ? ` · ${gp} at Green Point` : ""}
+      </span>
+    );
+  }
   return (
-    <span className="flex flex-wrap items-center gap-1" aria-label={`${left} of ${total} left`}>
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          className={cn(
-            "flex h-4 w-4 items-center justify-center rounded-full border",
-            i < left ? "border-[#d4e3c8] bg-[#a3b693]" : "border-white/40 bg-white/10",
-          )}
-        >
-          {i >= left ? <Check className="h-3 w-3 text-white/80" strokeWidth={3} aria-hidden /> : null}
-        </span>
-      ))}
+    <span
+      className="flex flex-wrap items-center gap-1"
+      aria-label={`${left} of ${total} left${gp > 0 ? `, ${gp} used at Green Point` : ""}`}
+    >
+      {Array.from({ length: total }, (_, i) => {
+        const isLeft = i < left;
+        const isGp = !isLeft && i >= total - gp;
+        return (
+          <span
+            key={i}
+            className={cn(
+              "flex h-4 w-4 items-center justify-center rounded-full border",
+              isLeft
+                ? "border-[#d4e3c8] bg-[#a3b693]"
+                : isGp
+                  ? "border-[#d4af37] bg-[#d4af37]/25"
+                  : "border-white/40 bg-white/10",
+            )}
+          >
+            {isGp ? (
+              <MapPin className="h-2.5 w-2.5 text-[#f3dc8a]" strokeWidth={3} aria-hidden />
+            ) : !isLeft ? (
+              <Check className="h-3 w-3 text-white/80" strokeWidth={3} aria-hidden />
+            ) : null}
+          </span>
+        );
+      })}
       <span className="ml-1 text-xs text-white/80">
         {left}/{total}
       </span>
@@ -287,7 +313,7 @@ export function MembershipCard() {
           .select("id, credit_id, used_at")
           .eq("profile_id", user.id)
           .order("used_at", { ascending: false })
-          .limit(5),
+          .limit(500),
         fetchMemberBadges(user.id, 60),
         supabase.from("studio_settings").select("key, value").like("key", "tier_%"),
       ]);
@@ -504,7 +530,11 @@ export function MembershipCard() {
                           {b.is_unlimited ? (
                             <span className="text-xs text-white/80">Unlimited</span>
                           ) : (
-                            <Tally total={b.credits_total ?? 0} left={b.credits_remaining ?? 0} />
+                            <Tally
+                              total={b.credits_total ?? 0}
+                              left={b.credits_remaining ?? 0}
+                              greenPoint={gpVisits.filter((v) => v.credit_id === b.id).length}
+                            />
                           )}
                           <span className="text-[11px] text-white/70">
                             {b.access_scope === "open_access" ? "Longkloof & Green Point" : "Longkloof"}
@@ -515,9 +545,26 @@ export function MembershipCard() {
                     ))}
                   </ul>
                   {gpVisits.length > 0 ? (
-                    <p className="mt-3 border-t border-white/15 pt-2 text-[11px] text-white/75">
+                    <p className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/15 pt-2 text-[11px] text-white/75">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-white/40 bg-white/10">
+                          <Check className="h-2.5 w-2.5 text-white/80" strokeWidth={3} aria-hidden />
+                        </span>
+                        Used at Longkloof
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-[#d4af37] bg-[#d4af37]/25">
+                          <MapPin className="h-2 w-2 text-[#f3dc8a]" strokeWidth={3} aria-hidden />
+                        </span>
+                        Used at Green Point
+                      </span>
+                    </p>
+                  ) : null}
+                  {gpVisits.length > 0 ? (
+                    <p className="mt-1 text-[11px] text-white/75">
                       Green Point visits:{" "}
                       {gpVisits
+                        .slice(0, 5)
                         .map((v) =>
                           new Date(v.used_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short" }),
                         )

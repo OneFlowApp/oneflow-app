@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { STUDIO_TIMEZONE, ymdInTimeZone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 
 type Person = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null };
@@ -40,6 +41,8 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
   const [person, setPerson] = useState<Person | null>(null);
   const [balances, setBalances] = useState<Balance[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const today = ymdInTimeZone(new Date(), STUDIO_TIMEZONE);
+  const [usedOn, setUsedOn] = useState(today);
 
   useEffect(() => {
     if (!open) {
@@ -47,6 +50,7 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
       setPeople([]);
       setPerson(null);
       setBalances(null);
+      setUsedOn(ymdInTimeZone(new Date(), STUDIO_TIMEZONE));
     }
   }, [open]);
 
@@ -94,16 +98,23 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
   const tick = async (b: Balance) => {
     if (!person) return;
     setBusyId(b.credit_id);
-    const { data, error } = await supabase.rpc("use_credit_at_green_point", { p_credit_id: b.credit_id });
+    const { data, error } = await supabase.rpc("use_credit_at_green_point", {
+      p_credit_id: b.credit_id,
+      p_used_on: usedOn || today,
+    });
     setBusyId(null);
     if (error) {
       toast.error(supabaseErrorMessage(error, "Could not tick off this session"));
       return;
     }
+    const dayLabel =
+      usedOn && usedOn !== today
+        ? ` on ${new Date(`${usedOn}T12:00:00`).toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}`
+        : "";
     toast.success(
       b.is_unlimited
-        ? `Green Point visit recorded for ${nameOf(person)}`
-        : `Session ticked off. ${typeof data === "number" ? data : "?"} left on ${b.pack}.`,
+        ? `Green Point visit${dayLabel} recorded for ${nameOf(person)}`
+        : `Green Point session${dayLabel} ticked off. ${typeof data === "number" ? data : "?"} left on ${b.pack}.`,
     );
     await loadBalances(person);
   };
@@ -117,8 +128,8 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
             Green Point visit
           </DialogTitle>
           <DialogDescription>
-            For members with Access to: Longkloof &amp; Green Point. Check their card, then tick off
-            the session from the right pack.
+            For members with Access to: Longkloof &amp; Green Point. Choose the date they came to
+            Green Point, then tick off the session from the right pack.
           </DialogDescription>
         </DialogHeader>
 
@@ -167,6 +178,16 @@ export function GreenPointVisitDialog({ open, onOpenChange }: { open: boolean; o
                 Change
               </Button>
             </div>
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+              <span className="font-medium">Date used at Green Point</span>
+              <input
+                type="date"
+                value={usedOn}
+                max={today}
+                onChange={(e) => setUsedOn(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              />
+            </label>
             {balances === null ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : balances.length === 0 ? (
