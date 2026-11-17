@@ -171,9 +171,12 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
 
     void (async () => {
       setLoadingClasses(true);
-      // Staff can add anyone to any class: upcoming, under way, or already finished (last 14 days).
-      const nowMs = Date.now();
-      const sinceIso = new Date(nowMs - 14 * 24 * 60 * 60 * 1000).toISOString();
+      // Today's classes (including ones already finished) and upcoming ones. Earlier days are left out;
+      // to add someone to an older class, open that class and use Walk-in there.
+      const todayStart = new Date(
+        `${new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" })}T00:00:00+02:00`,
+      );
+      const sinceIso = todayStart.toISOString();
       const { data: raw, error } = await supabase
         .from("classes")
         .select("id, name, starts_at, ends_at, class_type, guide_name, location")
@@ -645,7 +648,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
             <p className="text-xs text-muted-foreground">
               {todayOnly
                   ? "Today’s classes only. Defaults to the class running now or the next one."
-                  : "Defaults to the class running now or the next one. Finished classes from the last 14 days are listed too."}
+                  : "Today’s and upcoming classes. Defaults to the class you’re on, or the one running now."}
             </p>
           </div>
 
