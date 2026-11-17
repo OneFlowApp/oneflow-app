@@ -312,7 +312,8 @@ export function userCreditCoversClassType(args: {
 }): boolean {
   const cat = normalizeProductCategoryKey(args.category);
   if (cat === "mat_towel" || cat === "cafe") return false;
-  if (cat === "all_access") return true;
+  // Same rule as the database (check_credit_class_type): if the pack lists class types,
+  // the class must be one of them, whatever the pack's category. An empty list covers everything.
   const allowed = args.allowed_class_types;
   if (!allowed || allowed.length === 0) return true;
   return allowed.includes(args.classType);
