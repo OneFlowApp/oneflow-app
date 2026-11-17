@@ -199,13 +199,20 @@ serve(async (req) => {
       });
     }
 
-    const { data: callerProfile } = await callerClient
+    // Read the caller's roles with the server key, so privacy rules on profiles can't hide them,
+    // and count secondary roles too (e.g. a manager whose main role is front desk).
+    const { data: callerProfile } = await createClient(SUPABASE_URL, serviceKey)
       .from("profiles")
-      .select("role")
+      .select("role, secondary_roles")
       .eq("id", callerUser.id)
       .maybeSingle();
 
-    const callerRole = (callerProfile?.role ?? "").toLowerCase();
+    const callerRoles = new Set(
+      [callerProfile?.role, ...((callerProfile?.secondary_roles as string[] | null) ?? [])]
+        .map((r) => String(r ?? "").toLowerCase())
+        .filter(Boolean),
+    );
+    const callerRole = callerRoles.has("director") ? "director" : callerRoles.has("management") ? "management" : "";
     if (callerRole !== "director" && callerRole !== "management") {
       return new Response(JSON.stringify({ error: "Only admins can send invites" }), {
         status: 403,
