@@ -157,6 +157,8 @@ type BookingRow = {
   id: string;
   status: string;
   payment_method: string | null;
+  unpaid?: boolean | null;
+  paid_where?: string | null;
   created_at: string;
   classes: { name: string; starts_at: string } | { name: string; starts_at: string }[] | null;
 };
@@ -304,6 +306,8 @@ export function CustomerProfileSheet({
           id,
           status,
           payment_method,
+          unpaid,
+          paid_where,
           created_at,
           classes ( name, starts_at )
         `,
@@ -1319,7 +1323,13 @@ export function CustomerProfileSheet({
                               </td>
                               <td className="max-w-[140px] px-3 py-2 text-muted-foreground">
                                 <span className="block truncate">
-                                  {(b.payment_method ?? "—").replace(/_/g, " ")}
+                                  {b.unpaid
+                                    ? "Not paid yet"
+                                    : b.paid_where?.trim() && b.payment_method !== "credit"
+                                      ? b.paid_where.trim()
+                                      : b.payment_method === "cash"
+                                        ? "Comp (no pack)"
+                                        : (b.payment_method ?? "—").replace(/_/g, " ")}
                                 </span>
                                 <span className="block text-[11px]">
                                   Booked {formatBookedAt(b.created_at)}

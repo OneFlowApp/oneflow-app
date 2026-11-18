@@ -25,8 +25,14 @@ export async function fetchBookingCredits(
 }
 
 /** "Single class · Reformer Drop In", "Package · Reformer Kloof 8 (5 left)", "Free class", "Flow Points". */
-export function bookingPaymentLabel(paymentMethod: string | null, credit: BookingCreditInfo | null | undefined): string {
+export function bookingPaymentLabel(
+  paymentMethod: string | null,
+  credit: BookingCreditInfo | null | undefined,
+  extra?: { unpaid?: boolean | null; paidWhere?: string | null },
+): string {
   const m = String(paymentMethod ?? "").toLowerCase();
+  if (extra?.unpaid) return "Not paid yet";
+  if (!credit && extra?.paidWhere?.trim()) return extra.paidWhere.trim();
   if (m === "free") return "Free class";
   if (m === "flow_points") return "Flow Points";
   if (credit) {
@@ -37,5 +43,6 @@ export function bookingPaymentLabel(paymentMethod: string | null, credit: Bookin
     return `Package · ${name}${left != null ? ` (${left} left)` : ""}`;
   }
   if (m === "credit") return "Pack credit";
+  if (m === "cash") return "Comp (no pack)";
   return m ? m.replace(/_/g, " ") : "—";
 }

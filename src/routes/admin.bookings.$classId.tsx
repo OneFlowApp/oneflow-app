@@ -192,7 +192,7 @@ function BookingClassDetailPage() {
     const { data: bookingData, error: bookingErr } = await supabase
       .from("bookings")
       .select(
-        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, paid_where, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
       )
       .eq("class_id", classId)
       .order("created_at", { ascending: true });
@@ -254,7 +254,9 @@ function BookingClassDetailPage() {
         memberShort: shortMemberName(fn, ln || ""),
         status,
         classStartsAtIso: clsOne.starts_at,
-        creditLabel: bookingPaymentLabel(r.payment_method, r.credit_id ? creditInfo.get(r.credit_id) : null),
+        creditLabel: bookingPaymentLabel(r.payment_method, r.credit_id ? creditInfo.get(r.credit_id) : null, {
+          paidWhere: (r as { paid_where?: string | null }).paid_where,
+        }),
         matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
         towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
         hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
