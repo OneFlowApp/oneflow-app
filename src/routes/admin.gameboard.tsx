@@ -24,7 +24,11 @@ type Tile = {
   gift_product_id: string | null;
   weight: number;
   is_active: boolean;
+  goal_level: number;
 };
+
+const LEVELS = [3, 4, 5, 6, 7] as const;
+const levelName = (l: number) => (l >= 7 ? "7+ a week" : `${l} a week`);
 
 type GiftProduct = { id: string; name: string };
 
@@ -38,13 +42,14 @@ function GameboardAdminPage() {
   const [boardSize, setBoardSize] = useState("9");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [level, setLevel] = useState<number>(3);
 
   const load = useCallback(async () => {
     setLoading(true);
     const [t, p, s] = await Promise.all([
       supabase
         .from("gameboard_tiles")
-        .select("id, sort_order, label, kind, gift_product_id, weight, is_active")
+        .select("id, sort_order, label, kind, gift_product_id, weight, is_active, goal_level")
         .order("sort_order"),
       supabase.from("products").select("id, name").ilike("name", "Gift:%").order("name"),
       supabase.from("studio_settings").select("value").eq("key", "gameboard_board_size").maybeSingle(),
@@ -65,12 +70,23 @@ function GameboardAdminPage() {
     void load();
   }, [load]);
 
-  const total = useMemo(
-    () => tiles.filter((t) => t.is_active).reduce((n, t) => n + Math.max(0, t.weight || 0), 0),
+  const totalFor = useCallback(
+    (l: number) =>
+      tiles
+        .filter((t) => t.goal_level === l && t.is_active)
+        .reduce((n, t) => n + Math.max(0, t.weight || 0), 0),
     [tiles],
   );
+  const total = useMemo(() => totalFor(level), [totalFor, level]);
   const pct = (t: Tile) => (t.is_active && total > 0 ? (100 * Math.max(0, t.weight || 0)) / total : 0);
-  const byKind = (k: Tile["kind"]) => tiles.filter((t) => t.kind === k).reduce((n, t) => n + pct(t), 0);
+  const levelTiles = tiles.map((t, i) => ({ t, i })).filter(({ t }) => t.goal_level === level);
+  const byKind = (k: Tile["kind"]) =>
+    levelTiles.filter(({ t }) => t.kind === k).reduce((n, { t }) => n + pct(t), 0);
+  /** The layer members on this goal actually play (falls back to a lower layer with rewards). */
+  const playsLayer = (l: number) => {
+    for (let x = l; x >= 3; x--) if (totalFor(x) > 0) return x;
+    return LEVELS.find((x) => totalFor(x) > 0) ?? 3;
+  };
   const dirty = JSON.stringify(tiles) !== saved;
 
   const update = (i: number, patch: Partial<Tile>) =>
@@ -87,7 +103,16 @@ function GameboardAdminPage() {
         gift_product_id: null,
         weight: 1,
         is_active: true,
+        goal_level: level,
       },
+    ]);
+
+  const copyFrom = (from: number) =>
+    setTiles((list) => [
+      ...list,
+      ...list
+        .filter((t) => t.goal_level === from)
+        .map((t, k) => ({ ...t, id: null, goal_level: level, sort_order: (list.at(-1)?.sort_order ?? 0) + k + 1 })),
     ]);
 
   const save = async () => {
@@ -101,8 +126,8 @@ function GameboardAdminPage() {
         return;
       }
     }
-    if (total <= 0) {
-      toast.error("At least one reward needs a chance above 0.");
+    if (totalFor(3) <= 0) {
+      toast.error("The 3 a week layer needs at least one reward with a chance above 0. It's the fallback for everyone.");
       return;
     }
     const size = Math.round(Number(boardSize));
@@ -119,6 +144,7 @@ function GameboardAdminPage() {
       gift_product_id: t.kind === "gift" ? t.gift_product_id : null,
       weight: Math.max(0, Math.round(t.weight || 0)),
       is_active: t.is_active,
+      goal_level: t.goal_level,
     }));
     const existing = rows.filter((r) => "id" in r);
     const fresh = rows.filter((r) => !("id" in r));
@@ -153,6 +179,35 @@ function GameboardAdminPage() {
         <Skeleton className="h-64 w-full" />
       ) : (
         <>
+          <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Weekly goal">
+            {LEVELS.map((l) => (
+              <button
+                key={l}
+                type="button"
+                role="tab"
+                aria-selected={level === l}
+                onClick={() => setLevel(l)}
+                className={cn(
+                  "rounded-full border px-4 py-1.5 text-sm font-semibold",
+                  level === l ? "border-[#5f7a52] bg-[#5f7a52] text-white" : "border-border bg-card",
+                )}
+              >
+                Goal {levelName(l)}
+                <span className="ml-1.5 text-xs font-normal opacity-80">
+                  ({tiles.filter((t) => t.goal_level === l && t.is_active).length})
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <p className="mb-4 text-sm text-muted-foreground">
+            Members whose weekly goal is <span className="font-medium text-foreground">{levelName(level)}</span>{" "}
+            play these rewards.
+            {playsLayer(level) !== level
+              ? ` This layer has no rewards switched on yet, so they currently play the ${levelName(playsLayer(level))} rewards.`
+              : ""}
+          </p>
+
           <div className="mb-4 grid gap-3 sm:grid-cols-3">
             {(["gift", "sachet", "message"] as const).map((k) => (
               <div key={k} className="rounded-xl border border-border bg-card p-4">
@@ -169,8 +224,24 @@ function GameboardAdminPage() {
             the chance of winning that reward on one play.
           </p>
 
+          {levelTiles.length === 0 && editable ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border p-4 text-sm">
+              <span className="text-muted-foreground">No rewards on this layer yet.</span>
+              {LEVELS.filter((l) => l !== level && tiles.some((t) => t.goal_level === l)).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => copyFrom(l)}
+                  className="rounded-full border border-border px-3 py-1 text-xs font-semibold"
+                >
+                  Copy the {levelName(l)} rewards
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <ul className="space-y-2">
-            {tiles.map((t, i) => (
+            {levelTiles.map(({ t, i }) => (
               <li
                 key={t.id ?? `new-${i}`}
                 className={cn(

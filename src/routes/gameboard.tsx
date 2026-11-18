@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   fetchGameboard,
+  fetchGameboardLevels,
   fetchGameboardSize,
   formatRewardDate,
   peekGameboardTile,
@@ -13,6 +14,7 @@ import {
   shareGift,
   startGameboardPlay,
   TIER_NAME,
+  type GameboardLevels,
   type GameboardPick,
   type GameboardReward,
   type GameboardState,
@@ -43,15 +45,17 @@ function GameboardPage() {
   const [peekMode, setPeekMode] = useState(false);
   const [peek, setPeek] = useState<{ index: number; label: string; kind: GameboardReward["kind"] } | null>(null);
   const [boardSize, setBoardSize] = useState(9);
+  const [levels, setLevels] = useState<GameboardLevels | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<(GameboardPick & { picked: number }) | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, size] = await Promise.all([fetchGameboard(), fetchGameboardSize()]);
+      const [s, size, lv] = await Promise.all([fetchGameboard(), fetchGameboardSize(), fetchGameboardLevels()]);
       setState(s);
       setBoardSize(size);
+      setLevels(lv);
       setPlayId(s.open_play_id);
     } catch (e) {
       toast.error(supabaseErrorMessage(e, "Could not load the gameboard"));
@@ -282,6 +286,34 @@ function GameboardPage() {
                 </div>
               ) : null}
             </section>
+
+            {levels && levels.levels.length > 0 ? (
+              <section className="rounded-3xl border border-border bg-card p-4">
+                <h2 className="font-display text-base font-semibold">Rewards by weekly goal</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Set a bigger weekly goal on your Goals page, hit it, and play for these.
+                </p>
+                <ul className="mt-3 space-y-2">
+                  {levels.levels.map((l) => (
+                    <li
+                      key={l.level}
+                      className={cn(
+                        "rounded-2xl border p-3",
+                        l.level === levels.my_level ? "border-[#d4af37] bg-[#d4af37]/10" : "border-border",
+                      )}
+                    >
+                      <p className="text-sm font-semibold">
+                        Goal of {l.level >= 7 ? "7 or more" : l.level} a week
+                        {l.level === levels.my_level ? (
+                          <span className="ml-2 text-xs font-normal text-[#8a6d12]">Your rewards</span>
+                        ) : null}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{l.rewards.join(" · ")}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
 
             {active.length > 0 ? (
               <section>
