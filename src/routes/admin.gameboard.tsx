@@ -39,20 +39,18 @@ function GameboardAdminPage() {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [saved, setSaved] = useState<string>("");
   const [gifts, setGifts] = useState<GiftProduct[]>([]);
-  const [boardSize, setBoardSize] = useState("9");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [level, setLevel] = useState<number>(3);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [t, p, s] = await Promise.all([
+    const [t, p] = await Promise.all([
       supabase
         .from("gameboard_tiles")
         .select("id, sort_order, label, kind, gift_product_id, weight, is_active, goal_level")
         .order("sort_order"),
       supabase.from("products").select("id, name").ilike("name", "Gift:%").order("name"),
-      supabase.from("studio_settings").select("value").eq("key", "gameboard_board_size").maybeSingle(),
     ]);
     setLoading(false);
     if (t.error) {
@@ -63,7 +61,6 @@ function GameboardAdminPage() {
     setTiles(rows);
     setSaved(JSON.stringify(rows));
     setGifts((p.data ?? []) as GiftProduct[]);
-    setBoardSize(String((s.data as { value?: string } | null)?.value ?? "9"));
   }, []);
 
   useEffect(() => {
@@ -78,7 +75,8 @@ function GameboardAdminPage() {
     [tiles],
   );
   const total = useMemo(() => totalFor(level), [totalFor, level]);
-  const pct = (t: Tile) => (t.is_active && total > 0 ? (100 * Math.max(0, t.weight || 0)) / total : 0);
+  const pct = (t: Tile) =>
+    t.is_active && total > 0 ? (100 * Math.max(0, t.weight || 0)) / total : 0;
   const levelTiles = tiles.map((t, i) => ({ t, i })).filter(({ t }) => t.goal_level === level);
   const byKind = (k: Tile["kind"]) =>
     levelTiles.filter(({ t }) => t.kind === k).reduce((n, { t }) => n + pct(t), 0);
@@ -112,7 +110,12 @@ function GameboardAdminPage() {
       ...list,
       ...list
         .filter((t) => t.goal_level === from)
-        .map((t, k) => ({ ...t, id: null, goal_level: level, sort_order: (list.at(-1)?.sort_order ?? 0) + k + 1 })),
+        .map((t, k) => ({
+          ...t,
+          id: null,
+          goal_level: level,
+          sort_order: (list.at(-1)?.sort_order ?? 0) + k + 1,
+        })),
     ]);
 
   const save = async () => {
@@ -127,12 +130,9 @@ function GameboardAdminPage() {
       }
     }
     if (totalFor(3) <= 0) {
-      toast.error("The 3 a week layer needs at least one reward with a chance above 0. It's the fallback for everyone.");
-      return;
-    }
-    const size = Math.round(Number(boardSize));
-    if (!Number.isFinite(size) || size < 3 || size > 25) {
-      toast.error("The board needs between 3 and 25 tiles.");
+      toast.error(
+        "The 3 a week layer needs at least one reward with a chance above 0. It's the fallback for everyone.",
+      );
       return;
     }
     setSaving(true);
@@ -149,11 +149,12 @@ function GameboardAdminPage() {
     const existing = rows.filter((r) => "id" in r);
     const fresh = rows.filter((r) => !("id" in r));
     const results = await Promise.all([
-      existing.length ? supabase.from("gameboard_tiles").upsert(existing) : Promise.resolve({ error: null }),
-      fresh.length ? supabase.from("gameboard_tiles").insert(fresh) : Promise.resolve({ error: null }),
-      supabase
-        .from("studio_settings")
-        .upsert({ key: "gameboard_board_size", value: String(size) }, { onConflict: "key" }),
+      existing.length
+        ? supabase.from("gameboard_tiles").upsert(existing)
+        : Promise.resolve({ error: null }),
+      fresh.length
+        ? supabase.from("gameboard_tiles").insert(fresh)
+        : Promise.resolve({ error: null }),
     ]);
     setSaving(false);
     const err = results.find((r) => r.error)?.error;
@@ -166,7 +167,6 @@ function GameboardAdminPage() {
   };
 
   const input = "h-9 rounded-md border border-input bg-background px-2 text-sm disabled:opacity-60";
-  const boardN = Math.max(3, Math.min(25, Math.round(Number(boardSize)) || 9));
 
   return (
     <div className="pb-10">
@@ -189,7 +189,9 @@ function GameboardAdminPage() {
                 onClick={() => setLevel(l)}
                 className={cn(
                   "rounded-full border px-4 py-1.5 text-sm font-semibold",
-                  level === l ? "border-[#5f7a52] bg-[#5f7a52] text-white" : "border-border bg-card",
+                  level === l
+                    ? "border-[#5f7a52] bg-[#5f7a52] text-white"
+                    : "border-border bg-card",
                 )}
               >
                 Goal {levelName(l)}
@@ -201,8 +203,9 @@ function GameboardAdminPage() {
           </div>
 
           <p className="mb-4 text-sm text-muted-foreground">
-            Members whose weekly goal is <span className="font-medium text-foreground">{levelName(level)}</span>{" "}
-            play these rewards.
+            Members whose weekly goal is{" "}
+            <span className="font-medium text-foreground">{levelName(level)}</span> play these
+            rewards.
             {playsLayer(level) !== level
               ? ` This layer has no rewards switched on yet, so they currently play the ${levelName(playsLayer(level))} rewards.`
               : ""}
@@ -219,24 +222,26 @@ function GameboardAdminPage() {
           </div>
 
           <p className="mb-3 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">Chance</span> is a weight: a reward with 2 turns up twice as
-            often as one with 1, and 0 means it never turns up. Each play's tile is drawn with these odds, so the % is
-            the chance of winning that reward on one play.
+            <span className="font-medium text-foreground">Chance</span> is a weight: a reward with 2
+            turns up twice as often as one with 1, and 0 means it never turns up. Each play's tile
+            is drawn with these odds, so the % is the chance of winning that reward on one play.
           </p>
 
           {levelTiles.length === 0 && editable ? (
             <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border p-4 text-sm">
               <span className="text-muted-foreground">No rewards on this layer yet.</span>
-              {LEVELS.filter((l) => l !== level && tiles.some((t) => t.goal_level === l)).map((l) => (
-                <button
-                  key={l}
-                  type="button"
-                  onClick={() => copyFrom(l)}
-                  className="rounded-full border border-border px-3 py-1 text-xs font-semibold"
-                >
-                  Copy the {levelName(l)} rewards
-                </button>
-              ))}
+              {LEVELS.filter((l) => l !== level && tiles.some((t) => t.goal_level === l)).map(
+                (l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => copyFrom(l)}
+                    className="rounded-full border border-border px-3 py-1 text-xs font-semibold"
+                  >
+                    Copy the {levelName(l)} rewards
+                  </button>
+                ),
+              )}
             </div>
           ) : null}
 
@@ -284,7 +289,9 @@ function GameboardAdminPage() {
                   </select>
                 ) : (
                   <span className="text-xs text-muted-foreground">
-                    {t.kind === "message" ? "A random message from the list" : "Staff mark it collected"}
+                    {t.kind === "message"
+                      ? "A random message from the list"
+                      : "Staff mark it collected"}
                   </span>
                 )}
                 <label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -322,18 +329,10 @@ function GameboardAdminPage() {
               >
                 <Plus className="h-4 w-4" aria-hidden /> Add a reward
               </button>
-              <label className="flex items-center gap-2 text-sm">
-                Tiles on the board
-                <input
-                  type="number"
-                  min={3}
-                  max={25}
-                  className={cn(input, "w-16")}
-                  value={boardSize}
-                  onChange={(e) => setBoardSize(e.target.value)}
-                />
-                <span className="text-xs text-muted-foreground">({boardN} tiles; repeats are fine)</span>
-              </label>
+              <span className="text-sm text-muted-foreground">
+                Members see {levelTiles.filter(({ t }) => t.is_active && t.weight > 0).length || 1}{" "}
+                tiles on this board (one per reward switched on).
+              </span>
               <button
                 type="button"
                 disabled={saving}
@@ -344,13 +343,15 @@ function GameboardAdminPage() {
               </button>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-muted-foreground">View only. Director and Management can change rewards.</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              View only. Director and Management can change rewards.
+            </p>
           )}
 
           <p className="mt-6 text-xs text-muted-foreground">
-            To stop a reward, untick On rather than deleting it, so past winners still see what they won. Gift classes
-            come from hidden products named "Gift: …" in Products. Plays already on someone's screen keep the board they
-            were dealt.
+            To stop a reward, untick On rather than deleting it, so past winners still see what they
+            won. Gift classes come from hidden products named "Gift: …" in Products. Plays already
+            on someone's screen keep the board they were dealt.
           </p>
         </>
       )}
