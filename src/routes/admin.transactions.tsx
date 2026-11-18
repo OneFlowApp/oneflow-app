@@ -105,6 +105,11 @@ function isRealOnlineRevenue(row: TxRow): boolean {
   return isRecordedYocoPayment(row.yocoPaymentId) && !row.refundedAt;
 }
 
+/** Paid at the counter (De Waterkant or Longkloof desk) and loaded in the dashboard, with an amount. */
+function isCounterRevenue(row: TxRow): boolean {
+  return (row.paidWhere === "green_point" || row.paidWhere === "studio") && !row.refundedAt && row.amount > 0;
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString("en-ZA", {
     timeZone: TZ,
@@ -285,7 +290,7 @@ function TransactionsPage() {
 
     const sumIn = (startIso: string, endIso: string) => {
       const online = mapped
-        .filter((r) => isRealOnlineRevenue(r) && r.date >= startIso && r.date <= endIso)
+        .filter((r) => (isRealOnlineRevenue(r) || isCounterRevenue(r)) && r.date >= startIso && r.date <= endIso)
         .reduce((acc, r) => acc + r.amount, 0);
       const offline = offlineRows
         .filter((r) => r.occurred_at >= startIso && r.occurred_at <= endIso)
