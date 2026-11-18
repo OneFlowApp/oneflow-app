@@ -73,6 +73,14 @@ export async function fetchGameboardSize(): Promise<number> {
   return Math.max(3, Number(data) || 9);
 }
 
+export type GameboardLevels = { my_level: number; levels: { level: number; rewards: string[] }[] };
+
+export async function fetchGameboardLevels(): Promise<GameboardLevels | null> {
+  const { data, error } = await supabase.rpc("gameboard_rewards_by_level");
+  if (error) return null;
+  return data as GameboardLevels;
+}
+
 export const REWARD_KIND_LABEL: Record<GameboardReward["kind"], string> = {
   gift: "Gift a class to a friend",
   message: "Motivational message",
