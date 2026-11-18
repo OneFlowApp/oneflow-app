@@ -90,7 +90,7 @@ const AUTH_REDIRECT_KEY = "oneflow_auth_redirect";
 export function consumePostOnboardingInvitePath(): string | null {
   try {
     const redirect = sessionStorage.getItem(AUTH_REDIRECT_KEY);
-    if (redirect?.startsWith("/invite/")) {
+    if (redirect?.startsWith("/invite/") || redirect?.startsWith("/gift/")) {
       sessionStorage.removeItem(AUTH_REDIRECT_KEY);
       return redirect;
     }

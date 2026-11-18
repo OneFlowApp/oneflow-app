@@ -6,6 +6,7 @@ import { TierSection } from "@/components/admin/TierSection";
 import { PauseSection } from "@/components/admin/PauseSection";
 import { UpgradeAccessDialog } from "@/components/admin/UpgradeAccessDialog";
 import { MemberFeesSection } from "@/components/admin/MemberFeesSection";
+import { GameboardRewardsSection } from "@/components/admin/GameboardRewardsSection";
 import {
   Calendar,
   Loader2,
@@ -1171,6 +1172,8 @@ export function CustomerProfileSheet({
                   </ul>
                 )}
               </section>
+
+              {customerId ? <GameboardRewardsSection profileId={customerId} /> : null}
 
               <section className="border-t border-border pt-6">
                 <h4 className="mb-1 font-display text-lg font-semibold">Messages</h4>

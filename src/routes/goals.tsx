@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Award, Flame, Pencil } from "lucide-react";
+import { Award, ChevronRight, Flame, Gift, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/auth";
@@ -164,6 +164,22 @@ function GoalsPage() {
             <p className="mt-2 text-sm text-muted-foreground">Start your streak this week!</p>
           )}
         </section>
+
+        <Link
+          to="/gameboard"
+          className="flex items-center gap-3 rounded-3xl border border-[#d4af37]/50 bg-[#d4af37]/10 p-5"
+        >
+          <Gift className="h-7 w-7 shrink-0 text-[#8a6d12]" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block font-display text-base font-semibold">Weekly Gameboard</span>
+            <span className="block text-xs text-muted-foreground">
+              {weeklyGoal >= 3 && thisWeekCount >= weeklyGoal
+                ? "Goal reached! Pick a tile and win a reward."
+                : "Hit a weekly goal of 3 or more classes to play and win rewards."}
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+        </Link>
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-2">
