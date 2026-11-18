@@ -322,6 +322,14 @@ function BookingClassDetailPage() {
     if (!removeTarget) return;
     setRemoving(true);
     try {
+      // Checked in: undo the check-in first, so removing gives the session back like any booking.
+      if (removeTarget.status === "attended") {
+        const { error: undoErr } = await supabase
+          .from("bookings")
+          .update({ status: "confirmed", checked_in: false, checked_in_at: null })
+          .eq("id", removeTarget.id);
+        if (undoErr) throw undoErr;
+      }
       const res = await cancelBookingWithPolicy({
         bookingId: removeTarget.id,
         cancellationReason: "admin_cancelled",
@@ -501,13 +509,27 @@ function BookingClassDetailPage() {
                     <span className={rosterStatusClass(b.status)}>{rosterStatusLabel(b.status)}</span>
                     <div className="flex w-full justify-end gap-2 sm:w-auto sm:flex-none">
                       {isIn ? (
-                        <button
-                          type="button"
-                          onClick={() => void updateBookingStatus(b.id, "confirmed")}
-                          className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-muted sm:flex-none"
-                        >
-                          <Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> Undo
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRemoveTarget(b);
+                              setWaiveLateFee(true);
+                            }}
+                            hidden={isGuide}
+                            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-destructive/40 bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/20 sm:flex-none"
+                          >
+                            <X className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            Remove
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void updateBookingStatus(b.id, "confirmed")}
+                            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold hover:bg-muted sm:flex-none"
+                          >
+                            <Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden /> Undo
+                          </button>
+                        </>
                       ) : isCancelled ? (
                         <span className="text-xs text-muted-foreground">—</span>
                       ) : (
