@@ -150,6 +150,8 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
   const [loadingCredits, setLoadingCredits] = useState(false);
   /** `"cash"` = comp / no credit; otherwise a user_credits id. */
   const [paymentChoice, setPaymentChoice] = useState<string>("cash");
+  /** New person: checked in before paying. */
+  const [newUnpaid, setNewUnpaid] = useState(false);
 
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -167,6 +169,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
     setWaiverAgreed(false);
     setCredits([]);
     setPaymentChoice("cash");
+    setNewUnpaid(false);
     setFutureClasses([]);
 
     void (async () => {
@@ -369,8 +372,10 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
       return;
     }
 
-    const payment_method = paymentChoice === "cash" ? "cash" : "credit";
-    const credit_id = paymentChoice === "cash" ? null : paymentChoice;
+    const noCredit = paymentChoice === "cash" || paymentChoice === "unpaid";
+    const payment_method = noCredit ? "cash" : "credit";
+    const credit_id = noCredit ? null : paymentChoice;
+    const markUnpaid = mode === "existing" ? paymentChoice === "unpaid" : newUnpaid;
 
     setSaving(true);
 
@@ -436,6 +441,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         ok?: boolean;
         error?: string;
         role?: string;
+        booking_id?: string;
       };
 
       if (!result?.ok) {
@@ -443,6 +449,15 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         toast.error(result.error ?? "Walk-in check-in failed");
         setSaving(false);
         return;
+      }
+
+      if (markUnpaid && result.booking_id) {
+        const { error: unpaidErr } = await supabase.rpc("set_booking_unpaid", {
+          p_booking_id: result.booking_id,
+        });
+        if (unpaidErr) {
+          toast.error(supabaseErrorMessage(unpaidErr, "Checked in, but could not mark as unpaid"));
+        }
       }
 
       if (emailForConfirm && selectedClass?.starts_at) {
@@ -671,6 +686,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
                         {userCreditPillLabel(c)}
                       </SelectItem>
                     ))}
+                    <SelectItem value="unpaid">Not paid yet (mark unpaid)</SelectItem>
                     <SelectItem value="cash">Comp — no credit (cash)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -687,6 +703,13 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
             <p className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
               New person walk-ins are checked in as cash/comp. Use Existing member to deduct a pack.
             </p>
+          ) : null}
+
+          {mode === "new" ? (
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox checked={newUnpaid} onCheckedChange={(v) => setNewUnpaid(v === true)} />
+              Not paid yet (mark unpaid)
+            </label>
           ) : null}
 
           {memberDetailsComplete && needsWaiver ? (
