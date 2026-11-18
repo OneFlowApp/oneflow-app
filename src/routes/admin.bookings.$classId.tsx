@@ -4,7 +4,7 @@ import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
 import { isEarlyCancellation } from "@/lib/earlyCancellation";
 import { bookingPaymentLabel, fetchBookingCredits } from "@/lib/bookingPaymentLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Undo2, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, CircleAlert, Undo2, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { useAuth } from "@/contexts/auth";
@@ -74,6 +74,7 @@ type BookingRow = {
   firstName: string;
   lastName: string;
   bookedAt: string;
+  unpaid: boolean;
 };
 
 type RosterSort = "just_booked" | "first_name" | "last_name";
@@ -126,6 +127,34 @@ function BookingClassDetailPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<BookingRow | null>(null);
+  const [payTarget, setPayTarget] = useState<BookingRow | null>(null);
+  const [payWhere, setPayWhere] = useState("Paid at Longkloof desk");
+  const [payAmount, setPayAmount] = useState("");
+  const [paySaving, setPaySaving] = useState(false);
+
+  const markPaid = async () => {
+    if (!payTarget) return;
+    const amount = payAmount.trim() === "" ? null : Number(payAmount.replace(",", "."));
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      toast.error("Enter the amount in rand, or leave it empty.");
+      return;
+    }
+    setPaySaving(true);
+    const { error: payErr } = await supabase.rpc("mark_booking_paid", {
+      p_booking_id: payTarget.id,
+      p_paid_where: payWhere,
+      p_amount: amount,
+    });
+    setPaySaving(false);
+    if (payErr) {
+      toast.error(supabaseErrorMessage(payErr, "Could not mark as paid"));
+      return;
+    }
+    toast.success(`${payTarget.memberFull} marked as paid`);
+    setPayTarget(null);
+    setPayAmount("");
+    void load();
+  };
   const [waiveLateFee, setWaiveLateFee] = useState(false);
   const [removing, setRemoving] = useState(false);
 
@@ -163,7 +192,7 @@ function BookingClassDetailPage() {
     const { data: bookingData, error: bookingErr } = await supabase
       .from("bookings")
       .select(
-        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
       )
       .eq("class_id", classId)
       .order("created_at", { ascending: true });
@@ -186,6 +215,7 @@ function BookingClassDetailPage() {
       class_id: string;
       payment_method: string | null;
       credit_id?: string | null;
+      unpaid?: boolean | null;
       mat_addon: boolean | null;
       towel_addon: boolean | null;
       created_at: string | null;
@@ -232,6 +262,7 @@ function BookingClassDetailPage() {
         firstName: fn,
         lastName: ln,
         bookedAt: r.created_at ?? "",
+        unpaid: Boolean(r.unpaid),
       });
     }
 
@@ -441,6 +472,17 @@ function BookingClassDetailPage() {
                           towel={b.towelAddon}
                           cafe={b.hasSageCredit}
                         />
+                        {b.unpaid ? (
+                          <button
+                            type="button"
+                            onClick={() => setPayTarget(b)}
+                            title="Not paid yet. Tap to mark as paid."
+                            className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white hover:bg-red-700"
+                          >
+                            <CircleAlert className="h-3 w-3" aria-hidden />
+                            Unpaid
+                          </button>
+                        ) : null}
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {b.creditLabel}
@@ -523,6 +565,62 @@ function BookingClassDetailPage() {
           onProfileUpdated={() => void load()}
         />
       ) : null}
+
+      <Sheet
+        open={payTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPayTarget(null);
+            setPayAmount("");
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-full max-w-md">
+          <SheetHeader>
+            <SheetTitle>Mark as paid</SheetTitle>
+          </SheetHeader>
+          <div className="mt-5 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {payTarget?.memberFull} was checked in before paying. Record where they paid and the red Unpaid tag
+              goes away.
+            </p>
+            <div className="grid gap-2">
+              {["Paid at Longkloof desk", "Paid at De Waterkant", "Paid online / EFT"].map((w) => (
+                <label key={w} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+                  <input type="radio" name="pay-where" checked={payWhere === w} onChange={() => setPayWhere(w)} />
+                  {w}
+                </label>
+              ))}
+            </div>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Amount paid (R)</span>
+              <input
+                inputMode="decimal"
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="Optional"
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+          </div>
+          <SheetFooter className="mt-6 gap-2">
+            <SheetClose asChild>
+              <button type="button" className="rounded-full border border-border px-4 py-2 text-sm font-semibold">
+                Cancel
+              </button>
+            </SheetClose>
+            <button
+              type="button"
+              disabled={paySaving}
+              onClick={() => void markPaid()}
+              className="rounded-full px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              style={{ backgroundColor: SAGE }}
+            >
+              {paySaving ? "Saving…" : "Mark as paid"}
+            </button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       <Sheet
         open={removeTarget !== null}
