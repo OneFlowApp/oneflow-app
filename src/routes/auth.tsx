@@ -46,7 +46,9 @@ function AuthLayout() {
 
 async function resolveDestination(userId: string, redirectPath?: string) {
   const safeRedirect =
-    redirectPath && redirectPath.startsWith("/invite/") ? redirectPath : undefined;
+    redirectPath && (redirectPath.startsWith("/invite/") || redirectPath.startsWith("/gift/"))
+      ? redirectPath
+      : undefined;
 
   const { data: profile } = await supabase
     .from("profiles")

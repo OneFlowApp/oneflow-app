@@ -56,6 +56,9 @@ const SETTING_KEYS = [
   "pause_fee_zar",
   "pause_min_weeks",
   "pause_max_weeks",
+  "gameboard_min_goal",
+  "gameboard_expiry_days",
+  "gameboard_plays_gold",
 ] as const;
 
 type SettingKey = (typeof SETTING_KEYS)[number];
@@ -88,6 +91,9 @@ const DEFAULT_VALUES: Record<SettingKey, string> = {
   pause_fee_zar: "300",
   pause_min_weeks: "1",
   pause_max_weeks: "4",
+  gameboard_min_goal: "3",
+  gameboard_expiry_days: "28",
+  gameboard_plays_gold: "2",
 };
 
 function csvEscape(s: string): string {
@@ -369,6 +375,14 @@ function SettingsPage() {
           { key: "pause_fee_zar" as SettingKey, label: "Pause fee (R)", type: "number" },
           { key: "pause_min_weeks" as SettingKey, label: "Shortest pause (weeks)", type: "number" },
           { key: "pause_max_weeks" as SettingKey, label: "Longest pause (weeks)", type: "number" },
+        ],
+      },
+      {
+        section: "Weekly Gameboard",
+        items: [
+          { key: "gameboard_min_goal" as SettingKey, label: "Lowest weekly goal that can play", type: "number" },
+          { key: "gameboard_expiry_days" as SettingKey, label: "Rewards expire after (days)", type: "number" },
+          { key: "gameboard_plays_gold" as SettingKey, label: "Plays a week for Gold cards", type: "number" },
         ],
       },
     ],

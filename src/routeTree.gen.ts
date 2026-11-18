@@ -18,6 +18,7 @@ import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
+import { Route as GameboardRouteImport } from './routes/gameboard'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ChallengeRouteImport } from './routes/challenge'
 import { Route as CafeRouteImport } from './routes/cafe'
@@ -29,6 +30,7 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PaymentSuccessRouteImport } from './routes/payment.success'
 import { Route as MeFriendsRouteImport } from './routes/me.friends'
 import { Route as InviteInviteIdRouteImport } from './routes/invite.$inviteId'
+import { Route as GiftTokenRouteImport } from './routes/gift.$token'
 import { Route as ClassClassIdRouteImport } from './routes/class.$classId'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -45,6 +47,7 @@ import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPayoutsRouteImport } from './routes/admin.payouts'
 import { Route as AdminInstallAppRouteImport } from './routes/admin.install-app'
 import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
+import { Route as AdminGameboardRouteImport } from './routes/admin.gameboard'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminClientCommsRouteImport } from './routes/admin.client-comms'
@@ -101,6 +104,11 @@ const GoalsRoute = GoalsRouteImport.update({
   path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GameboardRoute = GameboardRouteImport.update({
+  id: '/gameboard',
+  path: '/gameboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const FaqRoute = FaqRouteImport.update({
   id: '/faq',
   path: '/faq',
@@ -154,6 +162,11 @@ const MeFriendsRoute = MeFriendsRouteImport.update({
 const InviteInviteIdRoute = InviteInviteIdRouteImport.update({
   id: '/invite/$inviteId',
   path: '/invite/$inviteId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GiftTokenRoute = GiftTokenRouteImport.update({
+  id: '/gift/$token',
+  path: '/gift/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ClassClassIdRoute = ClassClassIdRouteImport.update({
@@ -236,6 +249,11 @@ const AdminGuidesRoute = AdminGuidesRouteImport.update({
   path: '/guides',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminGameboardRoute = AdminGameboardRouteImport.update({
+  id: '/gameboard',
+  path: '/gameboard',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminEmailRoute = AdminEmailRouteImport.update({
   id: '/email',
   path: '/email',
@@ -296,6 +314,7 @@ export interface FileRoutesByFullPath {
   '/cafe': typeof CafeRoute
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
+  '/gameboard': typeof GameboardRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
   '/messages': typeof MessagesRoute
@@ -312,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
   '/admin/payouts': typeof AdminPayoutsRoute
@@ -328,6 +348,7 @@ export interface FileRoutesByFullPath {
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/gift/$token': typeof GiftTokenRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
@@ -343,6 +364,7 @@ export interface FileRoutesByTo {
   '/cafe': typeof CafeRoute
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
+  '/gameboard': typeof GameboardRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
   '/messages': typeof MessagesRoute
@@ -358,6 +380,7 @@ export interface FileRoutesByTo {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
   '/admin/payouts': typeof AdminPayoutsRoute
@@ -374,6 +397,7 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/gift/$token': typeof GiftTokenRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
@@ -391,6 +415,7 @@ export interface FileRoutesById {
   '/cafe': typeof CafeRoute
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
+  '/gameboard': typeof GameboardRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
   '/messages': typeof MessagesRoute
@@ -407,6 +432,7 @@ export interface FileRoutesById {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
   '/admin/payouts': typeof AdminPayoutsRoute
@@ -423,6 +449,7 @@ export interface FileRoutesById {
   '/auth/callback': typeof AuthCallbackRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/class/$classId': typeof ClassClassIdRoute
+  '/gift/$token': typeof GiftTokenRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
   '/payment/success': typeof PaymentSuccessRoute
@@ -441,6 +468,7 @@ export interface FileRouteTypes {
     | '/cafe'
     | '/challenge'
     | '/faq'
+    | '/gameboard'
     | '/goals'
     | '/me'
     | '/messages'
@@ -457,6 +485,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
     | '/admin/payouts'
@@ -473,6 +502,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
+    | '/gift/$token'
     | '/invite/$inviteId'
     | '/me/friends'
     | '/payment/success'
@@ -488,6 +518,7 @@ export interface FileRouteTypes {
     | '/cafe'
     | '/challenge'
     | '/faq'
+    | '/gameboard'
     | '/goals'
     | '/me'
     | '/messages'
@@ -503,6 +534,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
     | '/admin/payouts'
@@ -519,6 +551,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
+    | '/gift/$token'
     | '/invite/$inviteId'
     | '/me/friends'
     | '/payment/success'
@@ -535,6 +568,7 @@ export interface FileRouteTypes {
     | '/cafe'
     | '/challenge'
     | '/faq'
+    | '/gameboard'
     | '/goals'
     | '/me'
     | '/messages'
@@ -551,6 +585,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
     | '/admin/payouts'
@@ -567,6 +602,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/auth/reset-password'
     | '/class/$classId'
+    | '/gift/$token'
     | '/invite/$inviteId'
     | '/me/friends'
     | '/payment/success'
@@ -584,6 +620,7 @@ export interface RootRouteChildren {
   CafeRoute: typeof CafeRoute
   ChallengeRoute: typeof ChallengeRoute
   FaqRoute: typeof FaqRoute
+  GameboardRoute: typeof GameboardRoute
   GoalsRoute: typeof GoalsRoute
   MeRoute: typeof MeRouteWithChildren
   MessagesRoute: typeof MessagesRoute
@@ -594,6 +631,7 @@ export interface RootRouteChildren {
   RewardsRoute: typeof RewardsRoute
   ScheduleRoute: typeof ScheduleRoute
   ClassClassIdRoute: typeof ClassClassIdRoute
+  GiftTokenRoute: typeof GiftTokenRoute
   InviteInviteIdRoute: typeof InviteInviteIdRoute
   PaymentSuccessRoute: typeof PaymentSuccessRoute
 }
@@ -661,6 +699,13 @@ declare module '@tanstack/react-router' {
       path: '/goals'
       fullPath: '/goals'
       preLoaderRoute: typeof GoalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gameboard': {
+      id: '/gameboard'
+      path: '/gameboard'
+      fullPath: '/gameboard'
+      preLoaderRoute: typeof GameboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/faq': {
@@ -738,6 +783,13 @@ declare module '@tanstack/react-router' {
       path: '/invite/$inviteId'
       fullPath: '/invite/$inviteId'
       preLoaderRoute: typeof InviteInviteIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gift/$token': {
+      id: '/gift/$token'
+      path: '/gift/$token'
+      fullPath: '/gift/$token'
+      preLoaderRoute: typeof GiftTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/class/$classId': {
@@ -852,6 +904,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminGuidesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/gameboard': {
+      id: '/admin/gameboard'
+      path: '/gameboard'
+      fullPath: '/admin/gameboard'
+      preLoaderRoute: typeof AdminGameboardRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/email': {
       id: '/admin/email'
       path: '/email'
@@ -959,6 +1018,7 @@ interface AdminRouteChildren {
   AdminClientCommsRoute: typeof AdminClientCommsRoute
   AdminCustomersRoute: typeof AdminCustomersRouteWithChildren
   AdminEmailRoute: typeof AdminEmailRoute
+  AdminGameboardRoute: typeof AdminGameboardRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
   AdminInstallAppRoute: typeof AdminInstallAppRoute
   AdminPayoutsRoute: typeof AdminPayoutsRoute
@@ -983,6 +1043,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminClientCommsRoute: AdminClientCommsRoute,
   AdminCustomersRoute: AdminCustomersRouteWithChildren,
   AdminEmailRoute: AdminEmailRoute,
+  AdminGameboardRoute: AdminGameboardRoute,
   AdminGuidesRoute: AdminGuidesRoute,
   AdminInstallAppRoute: AdminInstallAppRoute,
   AdminPayoutsRoute: AdminPayoutsRoute,
@@ -1031,6 +1092,7 @@ const rootRouteChildren: RootRouteChildren = {
   CafeRoute: CafeRoute,
   ChallengeRoute: ChallengeRoute,
   FaqRoute: FaqRoute,
+  GameboardRoute: GameboardRoute,
   GoalsRoute: GoalsRoute,
   MeRoute: MeRouteWithChildren,
   MessagesRoute: MessagesRoute,
@@ -1041,6 +1103,7 @@ const rootRouteChildren: RootRouteChildren = {
   RewardsRoute: RewardsRoute,
   ScheduleRoute: ScheduleRoute,
   ClassClassIdRoute: ClassClassIdRoute,
+  GiftTokenRoute: GiftTokenRoute,
   InviteInviteIdRoute: InviteInviteIdRoute,
   PaymentSuccessRoute: PaymentSuccessRoute,
 }
