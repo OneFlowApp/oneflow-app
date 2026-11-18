@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { SelfCheckInBoard } from "@/components/admin/SelfCheckInBoard";
@@ -58,8 +58,13 @@ function CheckInPage() {
   const [checkinOpenMinutes, setCheckinOpenMinutes] = useState(DEFAULT_CHECKIN_OPEN_MINUTES_BEFORE);
   const nowMs = useNowMs();
 
+  // Classes that have finished drop off the tablet, so only what's still to come (or running) shows.
   const orderedClasses = useMemo(
-    () => orderClassesForLiveDay(todayClasses, nowMs),
+    () =>
+      orderClassesForLiveDay(
+        todayClasses.filter((c) => new Date(c.ends_at ?? c.starts_at).getTime() > nowMs),
+        nowMs,
+      ),
     [todayClasses, nowMs],
   );
 
@@ -68,15 +73,19 @@ function CheckInPage() {
     [todayClasses, nowMs],
   );
 
-
   useEffect(() => {
     if (search.class) setSelectedClassId(search.class);
   }, [search.class]);
 
   useEffect(() => {
-    if (loading || !nextUpcomingClassId) return;
-    setSelectedClassId((prev) => prev ?? nextUpcomingClassId);
-  }, [loading, nextUpcomingClassId]);
+    if (loading) return;
+    // Keep the chosen class while it's still on the tablet; otherwise move to the next one.
+    setSelectedClassId((prev) =>
+      prev && orderedClasses.some((c) => c.id === prev)
+        ? prev
+        : (orderedClasses[0]?.id ?? nextUpcomingClassId ?? null),
+    );
+  }, [loading, nextUpcomingClassId, orderedClasses]);
 
   const rosterByClassId = useMemo(() => {
     const map = new Map<string, RosterRow[]>();
@@ -122,7 +131,7 @@ function CheckInPage() {
       setRoster([]);
       setLoading(false);
       setHasLoaded(true);
-    setHasLoaded(true);
+      setHasLoaded(true);
       return;
     }
 
@@ -151,7 +160,7 @@ function CheckInPage() {
       setRoster([]);
       setLoading(false);
       setHasLoaded(true);
-    setHasLoaded(true);
+      setHasLoaded(true);
       return;
     }
 
@@ -182,7 +191,7 @@ function CheckInPage() {
       setRoster([]);
       setLoading(false);
       setHasLoaded(true);
-    setHasLoaded(true);
+      setHasLoaded(true);
       return;
     }
 
@@ -198,6 +207,16 @@ function CheckInPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // A tablet left on overnight: load the new day's classes once the date changes.
+  const dayKey = new Date(nowMs).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+  const loadedDay = useRef(dayKey);
+  useEffect(() => {
+    if (loadedDay.current === dayKey) return;
+    loadedDay.current = dayKey;
+    setSelectedClassId(null);
+    void loadData();
+  }, [dayKey, loadData]);
 
   useEffect(() => {
     const channel = supabase
@@ -216,12 +235,7 @@ function CheckInPage() {
     return orderedClasses.map((c) => {
       const forClass = rosterByClassId.get(c.id) ?? [];
       const attended = forClass.filter((b) => b.status === "attended").length;
-      const window = checkInWindowAt(
-        c.starts_at,
-        c.class_type,
-        checkinOpenMinutes,
-        nowMs,
-      );
+      const window = checkInWindowAt(c.starts_at, c.class_type, checkinOpenMinutes, nowMs);
       return {
         key: c.id,
         label: classTitle(c),
@@ -230,9 +244,7 @@ function CheckInPage() {
         attended,
         guideName: c.guide_name,
         checkInOpen: window.allowed,
-        checkInHint: window.allowed
-          ? "Check-in open"
-          : (window.reason ?? "Check-in closed"),
+        checkInHint: window.allowed ? "Check-in open" : (window.reason ?? "Check-in closed"),
       };
     });
   }, [orderedClasses, rosterByClassId, checkinOpenMinutes, nowMs]);
@@ -240,7 +252,6 @@ function CheckInPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden max-[599px]:overflow-y-auto max-[599px]:scroll-touch">
       <PageHeader title="Check-In" />
-
 
       {loading && !hasLoaded ? (
         <div className="py-16 text-center text-base text-muted-foreground">Loading check in…</div>
