@@ -47,6 +47,7 @@ import { Route as AdminProductsRouteImport } from './routes/admin.products'
 import { Route as AdminPayoutsRouteImport } from './routes/admin.payouts'
 import { Route as AdminInstallAppRouteImport } from './routes/admin.install-app'
 import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
+import { Route as AdminGameboardRouteImport } from './routes/admin.gameboard'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminClientCommsRouteImport } from './routes/admin.client-comms'
@@ -248,6 +249,11 @@ const AdminGuidesRoute = AdminGuidesRouteImport.update({
   path: '/guides',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminGameboardRoute = AdminGameboardRouteImport.update({
+  id: '/gameboard',
+  path: '/gameboard',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminEmailRoute = AdminEmailRouteImport.update({
   id: '/email',
   path: '/email',
@@ -325,6 +331,7 @@ export interface FileRoutesByFullPath {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
   '/admin/payouts': typeof AdminPayoutsRoute
@@ -373,6 +380,7 @@ export interface FileRoutesByTo {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
   '/admin/payouts': typeof AdminPayoutsRoute
@@ -424,6 +432,7 @@ export interface FileRoutesById {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
   '/admin/payouts': typeof AdminPayoutsRoute
@@ -476,6 +485,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
     | '/admin/payouts'
@@ -524,6 +534,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
     | '/admin/payouts'
@@ -574,6 +585,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
     | '/admin/payouts'
@@ -892,6 +904,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminGuidesRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/gameboard': {
+      id: '/admin/gameboard'
+      path: '/gameboard'
+      fullPath: '/admin/gameboard'
+      preLoaderRoute: typeof AdminGameboardRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/email': {
       id: '/admin/email'
       path: '/email'
@@ -999,6 +1018,7 @@ interface AdminRouteChildren {
   AdminClientCommsRoute: typeof AdminClientCommsRoute
   AdminCustomersRoute: typeof AdminCustomersRouteWithChildren
   AdminEmailRoute: typeof AdminEmailRoute
+  AdminGameboardRoute: typeof AdminGameboardRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
   AdminInstallAppRoute: typeof AdminInstallAppRoute
   AdminPayoutsRoute: typeof AdminPayoutsRoute
@@ -1023,6 +1043,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminClientCommsRoute: AdminClientCommsRoute,
   AdminCustomersRoute: AdminCustomersRouteWithChildren,
   AdminEmailRoute: AdminEmailRoute,
+  AdminGameboardRoute: AdminGameboardRoute,
   AdminGuidesRoute: AdminGuidesRoute,
   AdminInstallAppRoute: AdminInstallAppRoute,
   AdminPayoutsRoute: AdminPayoutsRoute,

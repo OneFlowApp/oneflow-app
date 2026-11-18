@@ -29,6 +29,7 @@ export type AdminArea =
   | "waivers"
   | "badges"
   | "reviews"
+  | "gameboard"
   | "challenge"
   | "promotions"
   | "email"
@@ -51,6 +52,7 @@ const ALL_AREAS: readonly AdminArea[] = [
   "waivers",
   "badges",
   "reviews",
+  "gameboard",
   "challenge",
   "promotions",
   "email",

@@ -6,6 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
   fetchGameboard,
+  fetchGameboardSize,
   formatRewardDate,
   peekGameboardTile,
   pickGameboardTile,
@@ -22,12 +23,6 @@ export const Route = createFileRoute("/gameboard")({
   head: () => ({ meta: [{ title: "Weekly Gameboard — One Flow" }] }),
   component: GameboardPage,
 });
-
-function kindOfLabel(label: string): GameboardReward["kind"] {
-  if (/gift/i.test(label)) return "gift";
-  if (/sachet/i.test(label)) return "sachet";
-  return "message";
-}
 
 function RewardIcon({ kind, className }: { kind: GameboardReward["kind"]; className?: string }) {
   if (kind === "gift") return <Gift className={className} aria-hidden />;
@@ -46,15 +41,17 @@ function GameboardPage() {
   const [loading, setLoading] = useState(true);
   const [playId, setPlayId] = useState<string | null>(null);
   const [peekMode, setPeekMode] = useState(false);
-  const [peek, setPeek] = useState<{ index: number; label: string } | null>(null);
+  const [peek, setPeek] = useState<{ index: number; label: string; kind: GameboardReward["kind"] } | null>(null);
+  const [boardSize, setBoardSize] = useState(9);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<(GameboardPick & { picked: number }) | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const s = await fetchGameboard();
+      const [s, size] = await Promise.all([fetchGameboard(), fetchGameboardSize()]);
       setState(s);
+      setBoardSize(size);
       setPlayId(s.open_play_id);
     } catch (e) {
       toast.error(supabaseErrorMessage(e, "Could not load the gameboard"));
@@ -67,7 +64,7 @@ function GameboardPage() {
     void load();
   }, [load]);
 
-  const tiles = Math.max(1, state?.tiles ?? 9);
+  const tiles = boardSize;
   const canPlay = Boolean(state?.ok && (state.play_week || state.open_play_id));
   const peekUsed = peek !== null || state?.open_play_peeked != null;
 
@@ -84,8 +81,8 @@ function GameboardPage() {
     try {
       const id = await ensurePlay();
       if (peekMode) {
-        const label = await peekGameboardTile(id, index);
-        setPeek({ index, label });
+        const p = await peekGameboardTile(id, index);
+        setPeek({ index, label: p.label, kind: p.kind });
         setPeekMode(false);
       } else {
         const r = await pickGameboardTile(id, index);
@@ -200,7 +197,8 @@ function GameboardPage() {
                   const revealed = result?.board?.[i];
                   const isPicked = result?.picked === index;
                   const isPeek = peek?.index === index && !result;
-                  const label = revealed ?? (isPeek ? peek?.label : null);
+                  const label = revealed?.label ?? (isPeek ? peek?.label : null);
+                  const kind = revealed?.kind ?? (isPeek ? peek?.kind : null) ?? "message";
                   return (
                     <button
                       key={index}
@@ -218,7 +216,7 @@ function GameboardPage() {
                     >
                       {label ? (
                         <>
-                          <RewardIcon kind={kindOfLabel(label)} className="h-6 w-6 text-[#5f7a52]" />
+                          <RewardIcon kind={kind} className="h-6 w-6 text-[#5f7a52]" />
                           <span className="mt-1 text-[10px] font-semibold leading-tight text-[#3d4f36]">
                             {label}
                           </span>

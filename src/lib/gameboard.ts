@@ -44,8 +44,10 @@ export type GameboardPick = {
   message: string | null;
   expires_at: string | null;
   gift_token: string | null;
-  board: string[];
+  board: { label: string; kind: GameboardReward["kind"] }[];
 };
+
+export type GameboardPeek = { label: string; kind: GameboardReward["kind"] };
 
 export async function fetchGameboard(): Promise<GameboardState> {
   const { data, error } = await supabase.rpc("my_gameboard");
@@ -59,11 +61,23 @@ export async function startGameboardPlay(): Promise<string> {
   return String(data);
 }
 
-export async function peekGameboardTile(playId: string, index: number): Promise<string> {
+export async function peekGameboardTile(playId: string, index: number): Promise<GameboardPeek> {
   const { data, error } = await supabase.rpc("peek_gameboard_tile", { p_play_id: playId, p_index: index });
   if (error) throw error;
-  return String(data);
+  return data as GameboardPeek;
 }
+
+export async function fetchGameboardSize(): Promise<number> {
+  const { data, error } = await supabase.rpc("gameboard_board_size");
+  if (error) return 9;
+  return Math.max(3, Number(data) || 9);
+}
+
+export const REWARD_KIND_LABEL: Record<GameboardReward["kind"], string> = {
+  gift: "Gift a class to a friend",
+  message: "Motivational message",
+  sachet: "Collect at the front desk",
+};
 
 export async function pickGameboardTile(playId: string, index: number): Promise<GameboardPick> {
   const { data, error } = await supabase.rpc("pick_gameboard_tile", { p_play_id: playId, p_index: index });
