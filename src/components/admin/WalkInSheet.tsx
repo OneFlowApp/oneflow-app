@@ -372,7 +372,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
       return;
     }
 
-    const noCredit = paymentChoice === "cash" || paymentChoice === "unpaid";
+    const noCredit = paymentChoice === "cash" || paymentChoice === "unpaid" || paymentChoice === "dwk";
     const payment_method = noCredit ? "cash" : "credit";
     const credit_id = noCredit ? null : paymentChoice;
     const markUnpaid = mode === "existing" ? paymentChoice === "unpaid" : newUnpaid;
@@ -449,6 +449,14 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         toast.error(result.error ?? "Walk-in check-in failed");
         setSaving(false);
         return;
+      }
+
+      if (mode === "existing" && paymentChoice === "dwk" && result.booking_id) {
+        const { error: dwkErr } = await supabase
+          .from("bookings")
+          .update({ paid_where: "De Waterkant pack" })
+          .eq("id", result.booking_id);
+        if (dwkErr) toast.error(supabaseErrorMessage(dwkErr, "Checked in, but could not note the De Waterkant pack"));
       }
 
       if (markUnpaid && result.booking_id) {
@@ -687,6 +695,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
                       </SelectItem>
                     ))}
                     <SelectItem value="unpaid">Not paid yet (mark unpaid)</SelectItem>
+                    <SelectItem value="dwk">Pack at De Waterkant (Mindbody)</SelectItem>
                     <SelectItem value="cash">Comp — no credit (cash)</SelectItem>
                   </SelectContent>
                 </Select>

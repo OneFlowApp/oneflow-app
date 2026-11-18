@@ -105,9 +105,13 @@ function isRealOnlineRevenue(row: TxRow): boolean {
   return isRecordedYocoPayment(row.yocoPaymentId) && !row.refundedAt;
 }
 
-/** Paid at the counter (De Waterkant or Longkloof desk) and loaded in the dashboard, with an amount. */
+/**
+ * Paid at the Longkloof desk and loaded in the dashboard, with an amount (packs and upgrades).
+ * Money taken at De Waterkant is De Waterkant's revenue, so it never counts in these totals,
+ * even when the pack is loaded here so the member can use it at Longkloof.
+ */
 function isCounterRevenue(row: TxRow): boolean {
-  return (row.paidWhere === "green_point" || row.paidWhere === "studio") && !row.refundedAt && row.amount > 0;
+  return row.paidWhere === "studio" && !row.refundedAt && row.amount > 0;
 }
 
 function formatDate(iso: string): string {
@@ -456,9 +460,9 @@ function TransactionsPage() {
       />
 
       <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Revenue today" value={formatRand(revenueToday)} />
-        <StatCard label="Revenue this week" value={formatRand(revenueWeek)} />
-        <StatCard label="Revenue this month" value={formatRand(revenueMonth)} />
+        <StatCard label="Longkloof revenue today" value={formatRand(revenueToday)} />
+        <StatCard label="Longkloof revenue this week" value={formatRand(revenueWeek)} />
+        <StatCard label="Longkloof revenue this month" value={formatRand(revenueMonth)} />
       </div>
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -602,6 +606,9 @@ function TransactionsPage() {
                     <span className="inline-flex rounded-full bg-[#e8efe3] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]">
                       {PAID_WHERE_LABEL[r.paidWhere]}
                     </span>
+                    {r.paidWhere === "green_point" ? (
+                      <p className="mt-1 text-[10px] text-muted-foreground">De Waterkant revenue, not counted here</p>
+                    ) : null}
                     {r.note ? <p className="mt-1 text-[10px] text-muted-foreground">{r.note}</p> : null}
                   </td>
                   <td className="whitespace-nowrap px-5 py-3 text-right">
