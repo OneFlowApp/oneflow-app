@@ -787,10 +787,14 @@ function ScheduleRow({
   const full = capacityInfo.full;
   const almostFull = capacityInfo.almostFull;
   const hasOverlap = Boolean(overlapBooking);
-  const canReserve = !isPast && !alreadyBooked && !full && !hasOverlap;
+  const bookingsClosed = (session as { bookings_closed?: boolean | null }).bookings_closed === true;
+  const waitlistClosed = (session as { waitlist_closed?: boolean | null }).waitlist_closed === true;
+  const canReserve = !isPast && !alreadyBooked && !full && !hasOverlap && !bookingsClosed;
   // When full + not booked + no overlap, the button opens the sheet to
   // join the waitlist (or manage an existing entry).
-  const canWaitlist = !isPast && !alreadyBooked && full && !hasOverlap;
+  const canWaitlist =
+    !isPast && !alreadyBooked && full && !hasOverlap && (onWaitlist || (!waitlistClosed && !bookingsClosed));
+  const closedLabel = !isPast && !alreadyBooked && !canReserve && !canWaitlist && (bookingsClosed || (full && waitlistClosed));
   const isFreeClass = session.is_free === true || isFreeBeginnerClass(session.class_type);
 
   return (
@@ -909,7 +913,7 @@ function ScheduleRow({
         disabled={!canReserve && !canWaitlist}
         className={cn(
           "mt-2.5 w-full rounded-lg py-2 text-xs font-semibold transition-opacity",
-          isPast || alreadyBooked || hasOverlap
+          isPast || alreadyBooked || hasOverlap || closedLabel
             ? "cursor-not-allowed bg-muted text-muted-foreground"
             : canWaitlist
               ? onWaitlist
@@ -924,6 +928,10 @@ function ScheduleRow({
           ? "Past"
           : alreadyBooked
             ? "Booked"
+            : closedLabel
+              ? bookingsClosed
+                ? "Bookings closed"
+                : "Full · waitlist closed"
             : hasOverlap
               ? "Time conflict"
               : full

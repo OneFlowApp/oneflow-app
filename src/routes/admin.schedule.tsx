@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Filter,
   Loader2,
+  Lock,
   MapPin,
   Plus,
   Search,
@@ -125,6 +126,8 @@ type ClassRow = {
   is_cancelled: boolean;
   product_id: string | null;
   recurring_group_id: string | null;
+  bookings_closed?: boolean | null;
+  waitlist_closed?: boolean | null;
 };
 
 type RecurringScope = "single" | "future";
@@ -408,6 +411,8 @@ function SchedulePage() {
 
   // UI state — weekOffset 0 = current Mon–Sun week (JHB)
   const [weekOffset, setWeekOffset] = useState(0);
+  /** This week: days before today are hidden unless staff choose to see them. */
+  const [showEarlierDays, setShowEarlierDays] = useState(false);
   const [q, setQ] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
@@ -726,7 +731,7 @@ function SchedulePage() {
     const { data, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, class_type_id, title_override, credit_covered, is_free, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id",
+        "id, name, class_type, class_type_id, title_override, credit_covered, is_free, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id, bookings_closed, waitlist_closed",
       )
       .gte("starts_at", fromIso)
       .lt("starts_at", toExclusiveIso)
@@ -890,11 +895,13 @@ function SchedulePage() {
     for (const list of map.values()) {
       list.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     }
-    return weekDayKeys(viewWeekStart).map((dayKey) => ({
-      dayKey,
-      list: map.get(dayKey) ?? [],
-    }));
-  }, [filtered, viewWeekStart]);
+    return weekDayKeys(viewWeekStart)
+      .filter((dayKey) => weekOffset !== 0 || showEarlierDays || dayKey >= todayKey)
+      .map((dayKey) => ({
+        dayKey,
+        list: map.get(dayKey) ?? [],
+      }));
+  }, [filtered, viewWeekStart, weekOffset, showEarlierDays, todayKey]);
 
   const scrollToNow = useCallback(() => {
     const run = () => {
@@ -1037,6 +1044,27 @@ function SchedulePage() {
     }
     const tid = guidesTableIdForClassGuideId(c.guide_id, guides);
     return tid !== GUIDE_NONE ? tid : "none";
+  };
+
+  /** Close or reopen bookings / the waitlist for one class (members only; staff can still add people). */
+  const toggleClosed = async (c: ClassRow, field: "bookings_closed" | "waitlist_closed") => {
+    const next = !c[field];
+    setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, [field]: next } : r)));
+    const { error } = await supabase.from("classes").update({ [field]: next }).eq("id", c.id);
+    if (error) {
+      setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, [field]: !next } : r)));
+      toast.error(supabaseErrorMessage(error, "Could not save"));
+      return;
+    }
+    toast.success(
+      field === "bookings_closed"
+        ? next
+          ? "Bookings closed for this class"
+          : "Bookings open again"
+        : next
+          ? "Waitlist closed for this class"
+          : "Waitlist open again",
+    );
   };
 
   const saveInlineGuide = async (c: ClassRow, selectValue: string) => {
@@ -1937,6 +1965,17 @@ function SchedulePage() {
             <span className="ml-1 text-xs font-medium text-muted-foreground">
               {weekRangeLabel(viewWeekStart, viewWeekEnd)}
             </span>
+            {weekOffset === 0 && viewWeekStart < todayKey ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground"
+                onClick={() => setShowEarlierDays((v) => !v)}
+              >
+                {showEarlierDays ? "Hide earlier days" : "Show earlier days"}
+              </Button>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -2202,6 +2241,40 @@ function SchedulePage() {
                                         </span>
                                       ) : null}
                                     </div>
+                                    {canManage ? (
+                                      <div
+                                        className="flex shrink-0 flex-col gap-0.5"
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                      >
+                                        {(["bookings_closed", "waitlist_closed"] as const).map((f) => (
+                                          <button
+                                            key={f}
+                                            type="button"
+                                            onClick={() => void toggleClosed(c, f)}
+                                            title={
+                                              f === "bookings_closed"
+                                                ? c.bookings_closed
+                                                  ? "Bookings closed. Tap to open"
+                                                  : "Bookings open. Tap to close"
+                                                : c.waitlist_closed
+                                                  ? "Waitlist closed. Tap to open"
+                                                  : "Waitlist open. Tap to close"
+                                            }
+                                            className={cn(
+                                              "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                                              c[f]
+                                                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                                                : "border-border bg-card text-muted-foreground",
+                                            )}
+                                          >
+                                            {c[f] ? <Lock className="h-2.5 w-2.5" aria-hidden /> : null}
+                                            {f === "bookings_closed" ? "Book" : "Wait"}
+                                            {c[f] ? " closed" : " open"}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    ) : null}
                                     <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
                                       {c.booked_count ?? 0}/{c.capacity}
                                     </span>
