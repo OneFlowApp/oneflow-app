@@ -397,6 +397,8 @@ serve(async (req) => {
 
     const checkedAt = new Date().toISOString();
     const qrToken = crypto.randomUUID();
+    // A class that hasn't started yet: book the person in, don't check them in.
+    const notStarted = new Date(String(classRow.starts_at)).getTime() > Date.now();
 
     const { data: existingBooking, error: existingBookErr } = await admin
       .from("bookings")
@@ -415,7 +417,10 @@ serve(async (req) => {
 
     let bookingId: string;
 
-    if (existingBooking?.id) {
+    if (existingBooking?.id && notStarted) {
+      // Already booked into a class that hasn't started: nothing to do.
+      bookingId = existingBooking.id as string;
+    } else if (existingBooking?.id) {
       // Already booked — mark attended only. Do not attach a new credit (avoids double-deduct).
       const { data: updated, error: updateErr } = await admin
         .from("bookings")
@@ -443,11 +448,12 @@ serve(async (req) => {
       const insertRow: Record<string, unknown> = {
         profile_id: profileId,
         class_id,
-        status: "attended",
+        status: notStarted ? "confirmed" : "attended",
         payment_method,
         qr_token: qrToken,
-        checked_in: true,
-        checked_in_at: checkedAt,
+        checked_in: !notStarted,
+        checked_in_at: notStarted ? null : checkedAt,
+        booked_by: callerUser.id,
       };
       if (payment_method === "credit" && credit_id) {
         insertRow.credit_id = credit_id;
@@ -474,7 +480,7 @@ serve(async (req) => {
 
     const classDate = classDateFromStartsAtIso(classRow.starts_at as string);
     const challengeWindow = await loadChallengeWindow(admin);
-    if (classDate && isChallengeClassDate(classDate, challengeWindow)) {
+    if (!notStarted && classDate && isChallengeClassDate(classDate, challengeWindow)) {
       const { error: challengeErr } = await admin.from("challenge_checkins").upsert(
         {
           profile_id: profileId,
@@ -497,6 +503,7 @@ serve(async (req) => {
         ok: true,
         profile_id: profileId,
         booking_id: bookingId,
+        booked_only: notStarted,
         role,
         created_profile: createdProfile,
         payment_method,

@@ -162,114 +162,142 @@ function BookingClassDetailPage() {
     setLoading(true);
     setLoadError(null);
     try {
-    const { data: classData, error: classErr } = await supabase
-      .from("classes")
-      .select(
-        "id, name, title_override, class_type, class_type_id, starts_at, ends_at, capacity, booked_count, location, guide_name",
-      )
-      .eq("id", classId)
-      .maybeSingle();
+      const { data: classData, error: classErr } = await supabase
+        .from("classes")
+        .select(
+          "id, name, title_override, class_type, class_type_id, starts_at, ends_at, capacity, booked_count, location, guide_name",
+        )
+        .eq("id", classId)
+        .maybeSingle();
 
-    if (classErr) {
-      const message = supabaseErrorMessage(classErr, "Could not load class");
-      toast.error(message);
-      setCls(null);
-      setRoster([]);
-      setLoadError(message);
-      setLoading(false);
-      return;
-    }
-    if (!classData) {
-      setCls(null);
-      setRoster([]);
-      setLoadError("Class not found.");
-      setLoading(false);
-      return;
-    }
+      if (classErr) {
+        const message = supabaseErrorMessage(classErr, "Could not load class");
+        toast.error(message);
+        setCls(null);
+        setRoster([]);
+        setLoadError(message);
+        setLoading(false);
+        return;
+      }
+      if (!classData) {
+        setCls(null);
+        setRoster([]);
+        setLoadError("Class not found.");
+        setLoading(false);
+        return;
+      }
 
-    setCls(classData as ClassRow);
+      setCls(classData as ClassRow);
 
-    const { data: bookingData, error: bookingErr } = await supabase
-      .from("bookings")
-      .select(
-        "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, paid_where, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
-      )
-      .eq("class_id", classId)
-      .order("created_at", { ascending: true });
+      const { data: bookingData, error: bookingErr } = await supabase
+        .from("bookings")
+        .select(
+          "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, paid_where, booked_by, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+        )
+        .eq("class_id", classId)
+        .order("created_at", { ascending: true });
 
-    if (bookingErr) {
-      const message = supabaseErrorMessage(bookingErr, "Could not load roster");
-      toast.error(message);
-      setRoster([]);
-      setLoadError(message);
-      setLoading(false);
-      return;
-    }
+      if (bookingErr) {
+        const message = supabaseErrorMessage(bookingErr, "Could not load roster");
+        toast.error(message);
+        setRoster([]);
+        setLoadError(message);
+        setLoading(false);
+        return;
+      }
 
-    const raw = (bookingData ?? []) as Array<{
-      id: string;
-      status: string;
-      cancelled_at?: string | null;
-      late_cancel?: boolean | null;
-      profile_id: string | null;
-      class_id: string;
-      payment_method: string | null;
-      credit_id?: string | null;
-      unpaid?: boolean | null;
-      mat_addon: boolean | null;
-      towel_addon: boolean | null;
-      created_at: string | null;
-      profiles:
-        | { first_name: string; last_name: string; role?: string | null }
-        | { first_name: string; last_name: string; role?: string | null }[]
-        | null;
-      classes:
-        | { id: string; name: string; starts_at: string; ends_at: string }
-        | { id: string; name: string; starts_at: string; ends_at: string }[]
-        | null;
-    }>;
+      const raw = (bookingData ?? []) as Array<{
+        id: string;
+        status: string;
+        cancelled_at?: string | null;
+        late_cancel?: boolean | null;
+        profile_id: string | null;
+        class_id: string;
+        payment_method: string | null;
+        credit_id?: string | null;
+        unpaid?: boolean | null;
+        mat_addon: boolean | null;
+        towel_addon: boolean | null;
+        created_at: string | null;
+        profiles:
+          | { first_name: string; last_name: string; role?: string | null }
+          | { first_name: string; last_name: string; role?: string | null }[]
+          | null;
+        classes:
+          | { id: string; name: string; starts_at: string; ends_at: string }
+          | { id: string; name: string; starts_at: string; ends_at: string }[]
+          | null;
+      }>;
 
-    const [addonAccess, creditInfo] = await Promise.all([
-      fetchRosterMemberAddonAccess(supabase),
-      fetchBookingCredits(supabase, raw.map((r) => r.credit_id)),
-    ]);
+      const staffIds = [
+        ...new Set(
+          raw
+            .map((r) => (r as { booked_by?: string | null }).booked_by)
+            .filter((x, i): x is string => Boolean(x) && x !== raw[i]?.profile_id),
+        ),
+      ];
+      const [addonAccess, creditInfo, staffRes] = await Promise.all([
+        fetchRosterMemberAddonAccess(supabase),
+        fetchBookingCredits(
+          supabase,
+          raw.map((r) => r.credit_id),
+        ),
+        staffIds.length
+          ? supabase.from("profiles").select("id, first_name").in("id", staffIds)
+          : Promise.resolve({ data: [] as { id: string; first_name: string | null }[] }),
+      ]);
+      const staffName = new Map(
+        ((staffRes.data ?? []) as { id: string; first_name: string | null }[]).map((p) => [
+          p.id,
+          p.first_name ?? "staff",
+        ]),
+      );
 
-    const rows: BookingRow[] = [];
-    for (const r of raw) {
-      const prof = one(r.profiles);
-      const fn = prof?.first_name?.trim() ?? "";
-      const ln = prof?.last_name?.trim() ?? "";
-      const clsOne = one(r.classes);
-      if (!clsOne?.starts_at) continue;
-      if (isEarlyCancellation({ ...r, starts_at: clsOne.starts_at })) continue;
-      const st = String(r.status);
-      const status = (
-        ["confirmed", "attended", "cancelled", "no-show"].includes(st) ? st : "confirmed"
-      ) as BookingStatus;
-      const pid = r.profile_id;
-      rows.push({
-        id: r.id,
-        profile_id: r.profile_id,
-        memberFull: fn || ln ? `${fn} ${ln}`.trim() : "Unknown member",
-        memberShort: shortMemberName(fn, ln || ""),
-        status,
-        classStartsAtIso: clsOne.starts_at,
-        creditLabel: bookingPaymentLabel(r.payment_method, r.credit_id ? creditInfo.get(r.credit_id) : null, {
-          paidWhere: (r as { paid_where?: string | null }).paid_where,
-        }),
-        matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
-        towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
-        hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
-        memberRole: prof?.role ?? null,
-        firstName: fn,
-        lastName: ln,
-        bookedAt: r.created_at ?? "",
-        unpaid: Boolean(r.unpaid),
-      });
-    }
+      const rows: BookingRow[] = [];
+      for (const r of raw) {
+        const prof = one(r.profiles);
+        const fn = prof?.first_name?.trim() ?? "";
+        const ln = prof?.last_name?.trim() ?? "";
+        const clsOne = one(r.classes);
+        if (!clsOne?.starts_at) continue;
+        if (isEarlyCancellation({ ...r, starts_at: clsOne.starts_at })) continue;
+        const st = String(r.status);
+        const status = (
+          ["confirmed", "attended", "cancelled", "no-show"].includes(st) ? st : "confirmed"
+        ) as BookingStatus;
+        const pid = r.profile_id;
+        rows.push({
+          id: r.id,
+          profile_id: r.profile_id,
+          memberFull: fn || ln ? `${fn} ${ln}`.trim() : "Unknown member",
+          memberShort: shortMemberName(fn, ln || ""),
+          status,
+          classStartsAtIso: clsOne.starts_at,
+          creditLabel:
+            bookingPaymentLabel(
+              r.payment_method,
+              r.credit_id ? creditInfo.get(r.credit_id) : null,
+              {
+                paidWhere: (r as { paid_where?: string | null }).paid_where,
+              },
+            ) +
+            (() => {
+              const by = (r as { booked_by?: string | null }).booked_by;
+              return by && by !== r.profile_id ? ` · added by ${staffName.get(by) ?? "staff"}` : "";
+            })(),
+          matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
+          towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
+          hasSageCredit: Boolean(pid && addonAccess.cafeProfileIds.has(pid)),
+          memberRole: prof?.role ?? null,
+          firstName: fn,
+          lastName: ln,
+          bookedAt: r.created_at ?? "",
+          unpaid: Boolean(r.unpaid),
+        });
+      }
 
-    rows.sort((a, b) => a.memberFull.localeCompare(b.memberFull));
-    setRoster(rows);
+      rows.sort((a, b) => a.memberFull.localeCompare(b.memberFull));
+      setRoster(rows);
     } catch (e: unknown) {
       const message = supabaseErrorMessage(e, "Could not load class roster");
       toast.error(message);
@@ -508,7 +536,9 @@ function BookingClassDetailPage() {
                           : ""}
                       </p>
                     </div>
-                    <span className={rosterStatusClass(b.status)}>{rosterStatusLabel(b.status)}</span>
+                    <span className={rosterStatusClass(b.status)}>
+                      {rosterStatusLabel(b.status)}
+                    </span>
                     <div className="flex w-full justify-end gap-2 sm:w-auto sm:flex-none">
                       {isIn ? (
                         <>
@@ -605,13 +635,21 @@ function BookingClassDetailPage() {
           </SheetHeader>
           <div className="mt-5 space-y-4">
             <p className="text-sm text-muted-foreground">
-              {payTarget?.memberFull} was checked in before paying. Record where they paid and the red Unpaid tag
-              goes away.
+              {payTarget?.memberFull} was checked in before paying. Record where they paid and the
+              red Unpaid tag goes away.
             </p>
             <div className="grid gap-2">
               {["Paid at Longkloof desk", "Paid at De Waterkant", "Paid online / EFT"].map((w) => (
-                <label key={w} className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-                  <input type="radio" name="pay-where" checked={payWhere === w} onChange={() => setPayWhere(w)} />
+                <label
+                  key={w}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                >
+                  <input
+                    type="radio"
+                    name="pay-where"
+                    checked={payWhere === w}
+                    onChange={() => setPayWhere(w)}
+                  />
                   {w}
                 </label>
               ))}
@@ -629,7 +667,10 @@ function BookingClassDetailPage() {
           </div>
           <SheetFooter className="mt-6 gap-2">
             <SheetClose asChild>
-              <button type="button" className="rounded-full border border-border px-4 py-2 text-sm font-semibold">
+              <button
+                type="button"
+                className="rounded-full border border-border px-4 py-2 text-sm font-semibold"
+              >
                 Cancel
               </button>
             </SheetClose>
