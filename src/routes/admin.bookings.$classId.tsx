@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { formatStudioTime12Upper } from "@/lib/timezone";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
+import { AssignPackageDialog, type AssignPackageTarget } from "@/components/admin/AssignPackageDialog";
 import { TypeBadge } from "@/components/TypeBadge";
 import { classTypeTheme } from "@/lib/classTypeTheme";
 import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
@@ -131,6 +132,8 @@ function BookingClassDetailPage() {
   const [payWhere, setPayWhere] = useState("Paid at Longkloof desk");
   const [payAmount, setPayAmount] = useState("");
   const [paySaving, setPaySaving] = useState(false);
+  /** Load the pack they bought straight from the Unpaid tag; the class then comes off it automatically. */
+  const [assignFor, setAssignFor] = useState<AssignPackageTarget | null>(null);
 
   const markPaid = async () => {
     if (!payTarget) return;
@@ -665,6 +668,29 @@ function BookingClassDetailPage() {
               />
             </label>
           </div>
+          {payTarget?.profile_id && !isGuide ? (
+            <div className="mt-5 rounded-xl border border-[#d4af37]/50 bg-[#d4af37]/10 p-3">
+              <p className="text-sm font-semibold">Did they buy a pack?</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Load it here. If it covers this class, the class comes off the pack and the Unpaid tag goes.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!payTarget?.profile_id) return;
+                  setAssignFor({
+                    profileId: payTarget.profile_id,
+                    displayName: payTarget.memberFull,
+                    email: null,
+                  });
+                  setPayTarget(null);
+                }}
+                className="mt-2 rounded-full bg-[#5f7a52] px-4 py-2 text-xs font-semibold text-white"
+              >
+                Load their pack
+              </button>
+            </div>
+          ) : null}
           <SheetFooter className="mt-6 gap-2">
             <SheetClose asChild>
               <button
@@ -686,6 +712,22 @@ function BookingClassDetailPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      {assignFor ? (
+        <AssignPackageDialog
+          open
+          onOpenChange={(o) => {
+            if (!o) setAssignFor(null);
+          }}
+          target={assignFor}
+          canAssign={!isGuide}
+          includeAddons
+          onAssigned={() => {
+            setAssignFor(null);
+            void load();
+          }}
+        />
+      ) : null}
 
       <Sheet
         open={removeTarget !== null}
