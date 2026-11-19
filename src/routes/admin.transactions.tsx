@@ -289,7 +289,8 @@ function TransactionsPage() {
     const { data: giftData } = await supabase
       .from("pack_gifts")
       .select("id, product_id, product_name, amount_paid_zar, yoco_payment_id, paid_at, buyer:buyer_id(first_name, last_name)")
-      .eq("status", "open");
+      .eq("status", "open")
+      .eq("kind", "purchase");
     for (const g of (giftData ?? []) as Record<string, unknown>[]) {
       const buyer = (Array.isArray(g.buyer) ? g.buyer[0] : g.buyer) as
         | { first_name?: string; last_name?: string }
