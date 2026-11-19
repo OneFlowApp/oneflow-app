@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ChevronDown, Loader2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Gift, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { Switch } from "@/components/ui/switch";
@@ -163,6 +163,43 @@ function PricingPage() {
   const [pricingSections, setPricingSections] = useState<PricingSectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  /** Buying a pass as a gift for a friend. */
+  const [giftFor, setGiftFor] = useState<{ id: string; name: string; price: number } | null>(null);
+  const [giftRecipient, setGiftRecipient] = useState("");
+  const [giftMessage, setGiftMessage] = useState("");
+  const [giftBusy, setGiftBusy] = useState(false);
+
+  const buyGift = async () => {
+    if (!giftFor || giftBusy) return;
+    const user = await getUser();
+    if (!user) {
+      toast.error("Please sign in to buy a gift");
+      window.location.assign("/auth");
+      return;
+    }
+    setGiftBusy(true);
+    const origin = window.location.origin;
+    const { data, error } = await supabase.functions.invoke("yoco-checkout", {
+      body: {
+        pack_id: giftFor.id,
+        profile_id: user.id,
+        gift: true,
+        gift_recipient: giftRecipient.trim(),
+        gift_message: giftMessage.trim(),
+        success_url: `${origin}/gifts?bought=1`,
+        cancel_url: `${origin}/pricing`,
+      },
+    });
+    setGiftBusy(false);
+    const redirect =
+      (data as { redirectUrl?: string; redirect_url?: string } | null)?.redirectUrl ??
+      (data as { redirect_url?: string } | null)?.redirect_url;
+    if (error || !redirect) {
+      toast.error(supabaseErrorMessage(error, "Could not start the payment"));
+      return;
+    }
+    window.location.href = redirect;
+  };
   /** Continuous Flow: when it's greyed out for this member (12 months after a gap). */
   const [cfBlockedUntil, setCfBlockedUntil] = useState<string | null>(null);
 
@@ -506,9 +543,14 @@ function PricingPage() {
         </header>
 
         <main className="flex-1 space-y-4 px-5 pb-8 pt-0 touch-pan-y">
-          <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
-            Buy A Pass
-          </h1>
+          <div className="flex items-end justify-between gap-3">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-[#a3b693] dark:text-foreground">
+              Buy A Pass
+            </h1>
+            <Link to="/gifts" className="inline-flex items-center gap-1 text-xs font-semibold text-[#5f7a52]">
+              <Gift className="h-3.5 w-3.5" aria-hidden /> Your gifts
+            </Link>
+          </div>
 
           {loading ? (
             <div className="flex justify-center py-16">
@@ -724,6 +766,20 @@ function PricingPage() {
                                       "Buy Now"
                                     )}
                                   </button>
+                                  {p.is_continuous !== true && Number(p.price_zar ?? 0) > 0 ? (
+                                    <button
+                                      type="button"
+                                      disabled={buyingId !== null}
+                                      onClick={() => {
+                                        setGiftRecipient("");
+                                        setGiftMessage("");
+                                        setGiftFor({ id: p.id, name: p.name, price: Number(p.price_zar ?? 0) });
+                                      }}
+                                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-[#c5d4b8] px-4 py-2 text-xs font-semibold text-[#5f7a52] disabled:opacity-60"
+                                    >
+                                      <Gift className="h-3.5 w-3.5" aria-hidden /> Buy as a gift for a friend
+                                    </button>
+                                  ) : null}
                                   {buyingId === p.id ? (
                                     <p className="text-center text-xs text-muted-foreground">
                                       Redirecting to secure payment…
@@ -888,6 +944,57 @@ function PricingPage() {
           </p>
         </main>
       </div>
+
+      <Dialog open={giftFor !== null} onOpenChange={(o) => !o && !giftBusy && setGiftFor(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Gift {giftFor?.name}</DialogTitle>
+            <DialogDescription>
+              You pay now. We give you a link to send your friend; they sign in or sign up and claim the pass.
+              Its validity starts the day they claim it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Friend&apos;s name (optional)</span>
+              <input
+                value={giftRecipient}
+                onChange={(e) => setGiftRecipient(e.target.value)}
+                maxLength={80}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">A message (optional)</span>
+              <textarea
+                value={giftMessage}
+                onChange={(e) => setGiftMessage(e.target.value)}
+                maxLength={300}
+                rows={3}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium"
+              disabled={giftBusy}
+              onClick={() => setGiftFor(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={giftBusy}
+              className="rounded-lg bg-[#a3b693] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              onClick={() => void buyGift()}
+            >
+              {giftBusy ? "Redirecting…" : "Continue to payment"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={upsell !== null} onOpenChange={(o) => !o && setUpsell(null)}>
         <DialogContent className="max-w-md">

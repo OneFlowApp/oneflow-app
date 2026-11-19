@@ -478,6 +478,14 @@ serve(async (req) => {
   }
 
   const { pack_id, profile_id, success_url, cancel_url } = raw;
+  // Buying the pack as a gift for a friend: just the pack, no points, add-ons, upgrade or fees.
+  const isGift = raw?.gift === true;
+  if (isGift) {
+    raw.flow_points_used = 0;
+    raw.flow_points_discount_zar = 0;
+    raw.addon_ids = [];
+    raw.open_access_upgrade = false;
+  }
   console.log("pack_id:", pack_id, "profile_id:", profile_id);
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -531,6 +539,13 @@ serve(async (req) => {
   if (!authedUserId || authedUserId !== String(profile_id)) {
     return new Response(JSON.stringify({ error: "Please sign in to buy a pack." }), {
       status: 403,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  if (isGift && (packRow.is_continuous === true || packRow.is_addon === true)) {
+    return new Response(JSON.stringify({ error: "This pass can't be bought as a gift." }), {
+      status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
@@ -601,7 +616,7 @@ serve(async (req) => {
     .maybeSingle();
   const buyerName =
     [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || "Member";
-  const hasLateCancelFee = unpaidFees.ids.length > 0;
+  const hasLateCancelFee = !isGift && unpaidFees.ids.length > 0;
   const baseAmountCents = Number.isFinite(priceZar) ? Math.round(priceZar * 100) : NaN;
 
   let promoDiscountCents = 0;
@@ -736,7 +751,7 @@ serve(async (req) => {
     pricingDetails: { price: number };
   }> = [
     {
-      displayName: `${packName} — ${buyerName}`,
+      displayName: `${packName}${isGift ? " (gift)" : ""} — ${buyerName}`,
       quantity: 1,
       pricingDetails: { price: packLinePriceCents },
     },
@@ -803,6 +818,9 @@ serve(async (req) => {
       pack_id,
       profile_id,
       buyer_name: buyerName,
+      gift: isGift,
+      gift_recipient: isGift ? String(raw?.gift_recipient ?? "").slice(0, 80) : "",
+      gift_message: isGift ? String(raw?.gift_message ?? "").slice(0, 300) : "",
       late_cancel_fee_applied: lateFeeApplied,
       description: lateFeeApplied ? `+ R${Math.round(lateFeeCents / 100)} outstanding fees` : "",
       fee_ids: lateFeeApplied ? unpaidFees.ids.join(",") : "",

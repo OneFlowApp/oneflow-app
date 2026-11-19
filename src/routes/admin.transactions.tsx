@@ -285,6 +285,33 @@ function TransactionsPage() {
       });
     }
 
+    // Passes bought as a gift and not claimed yet (once claimed they show under the friend).
+    const { data: giftData } = await supabase
+      .from("pack_gifts")
+      .select("id, product_id, product_name, amount_paid_zar, yoco_payment_id, paid_at, buyer:buyer_id(first_name, last_name)")
+      .eq("status", "open");
+    for (const g of (giftData ?? []) as Record<string, unknown>[]) {
+      const buyer = (Array.isArray(g.buyer) ? g.buyer[0] : g.buyer) as
+        | { first_name?: string; last_name?: string }
+        | null;
+      groups.set(`gift|${g.id}`, {
+        id: `gift-${g.id}`,
+        date: String(g.paid_at),
+        memberId: null,
+        memberName: `Gift from ${[buyer?.first_name, buyer?.last_name].filter(Boolean).join(" ").trim() || "a member"}`,
+        productId: (g.product_id as string | null) ?? null,
+        productName: `${String(g.product_name ?? "Pass")} (gift, not claimed yet)`,
+        amount: Number(g.amount_paid_zar ?? 0) || 0,
+        paymentMethod: "yoco",
+        yocoPaymentId: (g.yoco_payment_id as string | null) ?? null,
+        refundedAt: null,
+        refundReason: null,
+        creditIds: [],
+        paidWhere: "online",
+        note: null,
+      });
+    }
+
     const mapped: TxRow[] = [...groups.values()];
 
     setRows(mapped);
