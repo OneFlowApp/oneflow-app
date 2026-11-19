@@ -18,6 +18,7 @@ import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MeRouteImport } from './routes/me'
 import { Route as GoalsRouteImport } from './routes/goals'
+import { Route as GiftsRouteImport } from './routes/gifts'
 import { Route as GameboardRouteImport } from './routes/gameboard'
 import { Route as FaqRouteImport } from './routes/faq'
 import { Route as ChallengeRouteImport } from './routes/challenge'
@@ -28,6 +29,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as PaymentSuccessRouteImport } from './routes/payment.success'
+import { Route as PackGiftTokenRouteImport } from './routes/pack-gift.$token'
 import { Route as MeFriendsRouteImport } from './routes/me.friends'
 import { Route as InviteInviteIdRouteImport } from './routes/invite.$inviteId'
 import { Route as GiftTokenRouteImport } from './routes/gift.$token'
@@ -104,6 +106,11 @@ const GoalsRoute = GoalsRouteImport.update({
   path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GiftsRoute = GiftsRouteImport.update({
+  id: '/gifts',
+  path: '/gifts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GameboardRoute = GameboardRouteImport.update({
   id: '/gameboard',
   path: '/gameboard',
@@ -152,6 +159,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const PaymentSuccessRoute = PaymentSuccessRouteImport.update({
   id: '/payment/success',
   path: '/payment/success',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PackGiftTokenRoute = PackGiftTokenRouteImport.update({
+  id: '/pack-gift/$token',
+  path: '/pack-gift/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MeFriendsRoute = MeFriendsRouteImport.update({
@@ -315,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
   '/gameboard': typeof GameboardRoute
+  '/gifts': typeof GiftsRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
   '/messages': typeof MessagesRoute
@@ -351,6 +364,7 @@ export interface FileRoutesByFullPath {
   '/gift/$token': typeof GiftTokenRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
+  '/pack-gift/$token': typeof PackGiftTokenRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/bookings/$classId': typeof AdminBookingsClassIdRoute
@@ -365,6 +379,7 @@ export interface FileRoutesByTo {
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
   '/gameboard': typeof GameboardRoute
+  '/gifts': typeof GiftsRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
   '/messages': typeof MessagesRoute
@@ -400,6 +415,7 @@ export interface FileRoutesByTo {
   '/gift/$token': typeof GiftTokenRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
+  '/pack-gift/$token': typeof PackGiftTokenRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin': typeof AdminIndexRoute
   '/admin/bookings/$classId': typeof AdminBookingsClassIdRoute
@@ -416,6 +432,7 @@ export interface FileRoutesById {
   '/challenge': typeof ChallengeRoute
   '/faq': typeof FaqRoute
   '/gameboard': typeof GameboardRoute
+  '/gifts': typeof GiftsRoute
   '/goals': typeof GoalsRoute
   '/me': typeof MeRouteWithChildren
   '/messages': typeof MessagesRoute
@@ -452,6 +469,7 @@ export interface FileRoutesById {
   '/gift/$token': typeof GiftTokenRoute
   '/invite/$inviteId': typeof InviteInviteIdRoute
   '/me/friends': typeof MeFriendsRoute
+  '/pack-gift/$token': typeof PackGiftTokenRoute
   '/payment/success': typeof PaymentSuccessRoute
   '/admin/': typeof AdminIndexRoute
   '/admin/bookings/$classId': typeof AdminBookingsClassIdRoute
@@ -469,6 +487,7 @@ export interface FileRouteTypes {
     | '/challenge'
     | '/faq'
     | '/gameboard'
+    | '/gifts'
     | '/goals'
     | '/me'
     | '/messages'
@@ -505,6 +524,7 @@ export interface FileRouteTypes {
     | '/gift/$token'
     | '/invite/$inviteId'
     | '/me/friends'
+    | '/pack-gift/$token'
     | '/payment/success'
     | '/admin/'
     | '/admin/bookings/$classId'
@@ -519,6 +539,7 @@ export interface FileRouteTypes {
     | '/challenge'
     | '/faq'
     | '/gameboard'
+    | '/gifts'
     | '/goals'
     | '/me'
     | '/messages'
@@ -554,6 +575,7 @@ export interface FileRouteTypes {
     | '/gift/$token'
     | '/invite/$inviteId'
     | '/me/friends'
+    | '/pack-gift/$token'
     | '/payment/success'
     | '/admin'
     | '/admin/bookings/$classId'
@@ -569,6 +591,7 @@ export interface FileRouteTypes {
     | '/challenge'
     | '/faq'
     | '/gameboard'
+    | '/gifts'
     | '/goals'
     | '/me'
     | '/messages'
@@ -605,6 +628,7 @@ export interface FileRouteTypes {
     | '/gift/$token'
     | '/invite/$inviteId'
     | '/me/friends'
+    | '/pack-gift/$token'
     | '/payment/success'
     | '/admin/'
     | '/admin/bookings/$classId'
@@ -621,6 +645,7 @@ export interface RootRouteChildren {
   ChallengeRoute: typeof ChallengeRoute
   FaqRoute: typeof FaqRoute
   GameboardRoute: typeof GameboardRoute
+  GiftsRoute: typeof GiftsRoute
   GoalsRoute: typeof GoalsRoute
   MeRoute: typeof MeRouteWithChildren
   MessagesRoute: typeof MessagesRoute
@@ -633,6 +658,7 @@ export interface RootRouteChildren {
   ClassClassIdRoute: typeof ClassClassIdRoute
   GiftTokenRoute: typeof GiftTokenRoute
   InviteInviteIdRoute: typeof InviteInviteIdRoute
+  PackGiftTokenRoute: typeof PackGiftTokenRoute
   PaymentSuccessRoute: typeof PaymentSuccessRoute
 }
 
@@ -699,6 +725,13 @@ declare module '@tanstack/react-router' {
       path: '/goals'
       fullPath: '/goals'
       preLoaderRoute: typeof GoalsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gifts': {
+      id: '/gifts'
+      path: '/gifts'
+      fullPath: '/gifts'
+      preLoaderRoute: typeof GiftsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/gameboard': {
@@ -769,6 +802,13 @@ declare module '@tanstack/react-router' {
       path: '/payment/success'
       fullPath: '/payment/success'
       preLoaderRoute: typeof PaymentSuccessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pack-gift/$token': {
+      id: '/pack-gift/$token'
+      path: '/pack-gift/$token'
+      fullPath: '/pack-gift/$token'
+      preLoaderRoute: typeof PackGiftTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/me/friends': {
@@ -1093,6 +1133,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChallengeRoute: ChallengeRoute,
   FaqRoute: FaqRoute,
   GameboardRoute: GameboardRoute,
+  GiftsRoute: GiftsRoute,
   GoalsRoute: GoalsRoute,
   MeRoute: MeRouteWithChildren,
   MessagesRoute: MessagesRoute,
@@ -1105,6 +1146,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClassClassIdRoute: ClassClassIdRoute,
   GiftTokenRoute: GiftTokenRoute,
   InviteInviteIdRoute: InviteInviteIdRoute,
+  PackGiftTokenRoute: PackGiftTokenRoute,
   PaymentSuccessRoute: PaymentSuccessRoute,
 }
 export const routeTree = rootRouteImport

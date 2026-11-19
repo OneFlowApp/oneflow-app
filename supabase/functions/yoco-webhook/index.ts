@@ -371,6 +371,11 @@ serve(async (req) => {
   // Yoco can deliver the same event more than once: only credit each payment once.
   const { data: already } = await supabase.from("user_credits").select("id").eq("yoco_payment_id", paymentId).limit(1);
   if (already && already.length > 0) return new Response("ok", { status: 200 });
+  const isGift = metadata.gift === true || metadata.gift === "true";
+  if (isGift) {
+    const { data: giftAlready } = await supabase.from("pack_gifts").select("id").eq("yoco_payment_id", paymentId).limit(1);
+    if (giftAlready && giftAlready.length > 0) return new Response("ok", { status: 200 });
+  }
 
   const { data: pack, error: packErr } = await supabase
     .from("products")
@@ -449,6 +454,33 @@ serve(async (req) => {
       r.upgrade_paid_at_studio = "longkloof";
     }
   });
+
+  // A gift: hold the pack for the friend to claim with a link, instead of adding it to the buyer.
+  if (isGift) {
+    const { data: claimSetting } = await supabase
+      .from("studio_settings")
+      .select("value")
+      .eq("key", "gift_pack_claim_days")
+      .maybeSingle();
+    const claimDays = Math.max(1, Number((claimSetting as any)?.value ?? 90) || 90);
+    const { error: giftErr } = await supabase.from("pack_gifts").insert({
+      buyer_id: profileId,
+      product_id: product.id,
+      product_name: product.name,
+      yoco_payment_id: paymentId,
+      amount_paid_zar: paidZar,
+      credit_rows: rows.slice(0, mainRowCount),
+      recipient_name: String(metadata.gift_recipient ?? "").trim() || null,
+      message: String(metadata.gift_message ?? "").trim() || null,
+      paid_at: now.toISOString(),
+      claim_by: new Date(now.getTime() + claimDays * 86400000).toISOString(),
+    });
+    if (giftErr) {
+      console.error("yoco-webhook: gift insert failed", giftErr);
+      return new Response("insert failed", { status: 500 });
+    }
+    return new Response("ok", { status: 200 });
+  }
 
   const { error: insertErr } = await supabase.from("user_credits").insert(rows);
   if (insertErr) {

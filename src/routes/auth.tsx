@@ -46,7 +46,7 @@ function AuthLayout() {
 
 async function resolveDestination(userId: string, redirectPath?: string) {
   const safeRedirect =
-    redirectPath && (redirectPath.startsWith("/invite/") || redirectPath.startsWith("/gift/"))
+    redirectPath && (redirectPath.startsWith("/invite/") || redirectPath.startsWith("/gift/") || redirectPath.startsWith("/pack-gift/"))
       ? redirectPath
       : undefined;
 
