@@ -12,7 +12,11 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { formatStudioTime12Upper } from "@/lib/timezone";
 import { WalkInSheet } from "@/components/admin/WalkInSheet";
-import { AssignPackageDialog, type AssignPackageTarget } from "@/components/admin/AssignPackageDialog";
+import { EmptyClassCheckIn } from "@/components/admin/EmptyClassCheckIn";
+import {
+  AssignPackageDialog,
+  type AssignPackageTarget,
+} from "@/components/admin/AssignPackageDialog";
 import { TypeBadge } from "@/components/TypeBadge";
 import { classTypeTheme } from "@/lib/classTypeTheme";
 import { classTitle, classTypeSlugFor } from "@/lib/classTitle";
@@ -432,6 +436,15 @@ function BookingClassDetailPage() {
         }
       />
 
+      {!loading && cls ? (
+        <EmptyClassCheckIn
+          classId={cls.id}
+          startsAt={cls.starts_at}
+          guideName={cls.guide_name ?? null}
+          bookedCount={activeCount}
+        />
+      ) : null}
+
       {loading ? (
         <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
           Loading roster…
@@ -672,7 +685,8 @@ function BookingClassDetailPage() {
             <div className="mt-5 rounded-xl border border-[#d4af37]/50 bg-[#d4af37]/10 p-3">
               <p className="text-sm font-semibold">Did they buy a pack?</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Load it here. If it covers this class, the class comes off the pack and the Unpaid tag goes.
+                Load it here. If it covers this class, the class comes off the pack and the Unpaid
+                tag goes.
               </p>
               <button
                 type="button"
