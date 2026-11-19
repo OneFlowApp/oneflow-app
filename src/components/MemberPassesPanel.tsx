@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Loader2, PauseCircle, Ticket } from "lucide-react";
+import { Gift, Loader2, PauseCircle, Ticket } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +19,7 @@ type CreditRow = {
   product_id: string | null;
   product_name: string | null;
   credits_remaining: number | null;
+  credits_total?: number | null;
   is_unlimited: boolean | null;
   expires_at: string | null;
   purchased_at: string | null;
@@ -26,10 +27,7 @@ type CreditRow = {
   access_scope?: string | null;
   mat_access?: boolean | null;
   towel_access?: boolean | null;
-  product:
-    | ProductJoin
-    | ProductJoin[]
-    | null;
+  product: ProductJoin | ProductJoin[] | null;
 };
 
 type ProductJoin = {
@@ -49,7 +47,7 @@ type PauseRow = {
 
 type PauseRules = { fee: number; minWeeks: number; maxWeeks: number };
 
-type PassPart = { id: string; label: string; unlimited: boolean; remaining: number };
+type PassPart = { id: string; label: string; unlimited: boolean; remaining: number; total: number };
 
 type Pass = {
   key: string;
@@ -58,6 +56,8 @@ type Pass = {
   openAccess: boolean;
   matAndTowel: boolean;
   canPause: boolean;
+  /** Paid, not Continuous Flow or staff: can be gifted if unused. */
+  giftable: boolean;
   pause: PauseRow | null;
   parts: PassPart[];
 };
@@ -99,6 +99,7 @@ function groupPasses(rows: CreditRow[], nowMs: number): Pass[] {
         openAccess: r.access_scope === "open_access",
         matAndTowel: false,
         canPause: Boolean(prod?.can_pause) && !prod?.is_continuous,
+        giftable: !prod?.is_continuous && !prod?.is_staff_only,
         pause: null,
         parts: [],
       };
@@ -111,6 +112,7 @@ function groupPasses(rows: CreditRow[], nowMs: number): Pass[] {
       label: partLabel(r.product_name ?? "", packName),
       unlimited: Boolean(r.is_unlimited),
       remaining: Math.max(0, Number(r.credits_remaining ?? 0) || 0),
+      total: Math.max(0, Number(r.credits_total ?? 0) || 0),
     });
   }
   // Keep packs that still have something to use.
@@ -125,7 +127,10 @@ function ymd(d: Date) {
 }
 
 function niceDate(iso: string) {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-ZA", {
+    day: "numeric",
+    month: "short",
+  });
 }
 
 function addDaysIso(iso: string, days: number) {
@@ -138,6 +143,7 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
   const [passes, setPasses] = useState<Pass[] | null>(null);
   const [rules, setRules] = useState<PauseRules>({ fee: 300, minWeeks: 1, maxWeeks: 4 });
   const [pausing, setPausing] = useState<Pass | null>(null);
+  const [gifting, setGifting] = useState<Pass | null>(null);
 
   const load = useCallback(async () => {
     const user = await getUser();
@@ -149,7 +155,7 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
       supabase
         .from("user_credits")
         .select(
-          "id, product_id, product_name, credits_remaining, is_unlimited, expires_at, purchased_at, refunded_at, access_scope, mat_access, towel_access, product:product_id ( name, is_staff_only, can_pause, is_continuous )",
+          "id, product_id, product_name, credits_remaining, credits_total, is_unlimited, expires_at, purchased_at, refunded_at, access_scope, mat_access, towel_access, product:product_id ( name, is_staff_only, can_pause, is_continuous )",
         )
         .eq("profile_id", user.id),
       supabase
@@ -170,7 +176,9 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
       p.pause = pauses.find((x) => p.parts.some((part) => part.id === x.credit_id)) ?? null;
     }
     setPasses(grouped);
-    const v = Object.fromEntries(((st ?? []) as { key: string; value: string }[]).map((r) => [r.key, Number(r.value)]));
+    const v = Object.fromEntries(
+      ((st ?? []) as { key: string; value: string }[]).map((r) => [r.key, Number(r.value)]),
+    );
     setRules({
       fee: Number.isFinite(v.pause_fee_zar) ? v.pause_fee_zar : 300,
       minWeeks: v.pause_min_weeks > 0 ? v.pause_min_weeks : 1,
@@ -254,6 +262,18 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
                   ) : null}
                 </div>
               ) : null}
+              {p.giftable &&
+              !p.pause &&
+              p.parts.every((x) => x.unlimited || x.remaining >= x.total) ? (
+                <button
+                  type="button"
+                  onClick={() => setGifting(p)}
+                  className="mr-2 mt-2 inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted-foreground transition-opacity active:opacity-70"
+                >
+                  <Gift className="h-3.5 w-3.5" aria-hidden />
+                  Gift to a friend
+                </button>
+              ) : null}
               {p.canPause && !p.pause && p.expiresAt ? (
                 <button
                   type="button"
@@ -269,11 +289,26 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
         </ul>
       )}
       <PauseDialog pass={pausing} rules={rules} onClose={() => setPausing(null)} />
+      <GiftPassDialog
+        pass={gifting}
+        onClose={(done) => {
+          setGifting(null);
+          if (done) void load();
+        }}
+      />
     </div>
   );
 }
 
-function PauseDialog({ pass, rules, onClose }: { pass: Pass | null; rules: PauseRules; onClose: () => void }) {
+function PauseDialog({
+  pass,
+  rules,
+  onClose,
+}: {
+  pass: Pass | null;
+  rules: PauseRules;
+  onClose: () => void;
+}) {
   const today = ymd(new Date());
   const [start, setStart] = useState(today);
   const [weeks, setWeeks] = useState(rules.minWeeks);
@@ -288,8 +323,13 @@ function PauseDialog({ pass, rules, onClose }: { pass: Pass | null; rules: Pause
 
   if (!pass) return null;
   const end = addDaysIso(start, weeks * 7 - 1);
-  const newExpiry = pass.expiresAt ? new Date(new Date(pass.expiresAt).getTime() + weeks * 7 * 86_400_000) : null;
-  const options = Array.from({ length: rules.maxWeeks - rules.minWeeks + 1 }, (_, i) => rules.minWeeks + i);
+  const newExpiry = pass.expiresAt
+    ? new Date(new Date(pass.expiresAt).getTime() + weeks * 7 * 86_400_000)
+    : null;
+  const options = Array.from(
+    { length: rules.maxWeeks - rules.minWeeks + 1 },
+    (_, i) => rules.minWeeks + i,
+  );
   const lastStart = pass.expiresAt ? ymd(new Date(pass.expiresAt)) : undefined;
 
   const confirm = async () => {
@@ -304,7 +344,10 @@ function PauseDialog({ pass, rules, onClose }: { pass: Pass | null; rules: Pause
       toast.error(supabaseErrorMessage(error, "Could not pause this pass"));
       return;
     }
-    const row = (Array.isArray(data) ? data[0] : data) as { pause_id: string; fee_zar: number } | null;
+    const row = (Array.isArray(data) ? data[0] : data) as {
+      pause_id: string;
+      fee_zar: number;
+    } | null;
     if (!row) {
       setBusy(false);
       toast.error("Could not pause this pass");
@@ -343,8 +386,8 @@ function PauseDialog({ pass, rules, onClose }: { pass: Pass | null; rules: Pause
         <DialogHeader>
           <DialogTitle>Pause {pass.name}</DialogTitle>
           <DialogDescription>
-            Pause for {rules.minWeeks} to {rules.maxWeeks} weeks, once per pass. Your end date moves out by the weeks
-            you pause.
+            Pause for {rules.minWeeks} to {rules.maxWeeks} weeks, once per pass. Your end date moves
+            out by the weeks you pause.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -397,6 +440,111 @@ function PauseDialog({ pass, rules, onClose }: { pass: Pass | null; rules: Pause
             {rules.fee > 0 ? `Pay R${rules.fee} and pause` : "Pause my pass"}
           </Button>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Gift an unused pass to a friend: it moves to them, with the same end date, once they claim it. */
+function GiftPassDialog({
+  pass,
+  onClose,
+}: {
+  pass: Pass | null;
+  onClose: (done: boolean) => void;
+}) {
+  const [recipient, setRecipient] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pass) {
+      setRecipient("");
+      setMessage("");
+      setLink(null);
+    }
+  }, [pass]);
+
+  const create = async () => {
+    if (!pass) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("gift_my_pass", {
+      p_credit_id: pass.parts[0]?.id,
+      p_recipient: recipient.trim() || null,
+      p_message: message.trim() || null,
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(supabaseErrorMessage(error, "Could not gift this pass"));
+      return;
+    }
+    setLink(`${window.location.origin}/pack-gift/${String(data)}`);
+  };
+
+  const share = async () => {
+    if (!link || !pass) return;
+    const text = `I'm gifting you my ${pass.name} at One Flow. Claim it here:`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "A gift from One Flow", text, url: link });
+        return;
+      } catch {
+        // cancelled: copy instead
+      }
+    }
+    await navigator.clipboard.writeText(`${text} ${link}`);
+    toast.success("Gift link copied. Send it to your friend!");
+  };
+
+  return (
+    <Dialog open={pass !== null} onOpenChange={(o) => !o && !busy && onClose(link !== null)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Gift {pass?.name}</DialogTitle>
+          <DialogDescription>
+            {link
+              ? "Your gift is ready. Send the link to your friend. You can take it back from Your gifts until they claim it."
+              : `It moves to your friend when they claim it, with the same end date${
+                  pass?.expiresAt ? ` (${formatStudioDateShort(pass.expiresAt)})` : ""
+                }. Until then it's off your passes.`}
+          </DialogDescription>
+        </DialogHeader>
+        {link ? (
+          <div className="space-y-2">
+            <Button className="w-full" onClick={() => void share()}>
+              <Gift className="mr-1.5 h-4 w-4" aria-hidden /> Share gift
+            </Button>
+            <Link to="/gifts" className="block text-center text-sm font-medium text-primary">
+              See your gifts
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">Friend&apos;s name (optional)</span>
+              <input
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                maxLength={80}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              <span className="font-medium">A message (optional)</span>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                maxLength={300}
+                rows={3}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+              />
+            </label>
+            <Button className="w-full" disabled={busy} onClick={() => void create()}>
+              {busy ? "Creating…" : "Create gift link"}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

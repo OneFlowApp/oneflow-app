@@ -20,6 +20,7 @@ export const Route = createFileRoute("/gifts")({
 type PackGift = {
   id: string;
   token: string;
+  kind: "purchase" | "transfer";
   product_name: string | null;
   amount_paid_zar: number | null;
   recipient_name: string | null;
@@ -60,8 +61,19 @@ function GiftsPage() {
   }, [load]);
 
   // Just paid: the payment confirmation can take a few seconds to arrive.
-  const newest = gifts?.[0];
-  const waiting = Boolean(bought) && (!newest || Date.now() - new Date(newest.paid_at).getTime() > 10 * 60_000);
+  const takeBack = async (g: PackGift) => {
+    const { error } = await supabase.rpc("cancel_pass_gift", { p_gift_id: g.id });
+    if (error) {
+      toast.error(error.message || "Could not take the gift back");
+      return;
+    }
+    toast.success(`${g.product_name ?? "Your pass"} is back on your passes`);
+    void load();
+  };
+
+  const newest = gifts?.find((g) => g.kind === "purchase");
+  const waiting =
+    Boolean(bought) && (!newest || Date.now() - new Date(newest.paid_at).getTime() > 10 * 60_000);
   useEffect(() => {
     if (!waiting || tries >= 10) return;
     const t = window.setTimeout(() => {
@@ -74,7 +86,11 @@ function GiftsPage() {
   return (
     <AppShell>
       <header className="safe-top flex items-center gap-2 px-5 pt-3 pb-3">
-        <Link to="/pricing" className="-ml-2 rounded-full p-2 text-muted-foreground" aria-label="Back to passes">
+        <Link
+          to="/pricing"
+          className="-ml-2 rounded-full p-2 text-muted-foreground"
+          aria-label="Back to passes"
+        >
           <ChevronLeft className="h-5 w-5" />
         </Link>
         <h1 className="font-display text-2xl font-semibold">Your gifts</h1>
@@ -84,7 +100,9 @@ function GiftsPage() {
           <div className="rounded-3xl border border-[#d4af37]/50 bg-[#d4af37]/10 p-5 text-center">
             <Gift className="mx-auto h-8 w-8 text-[#8a6d12]" aria-hidden />
             <p className="mt-2 font-display text-lg font-semibold">Thank you! Your gift is ready</p>
-            <p className="mt-1 text-sm text-muted-foreground">Send the link to your friend so they can claim it.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Send the link to your friend so they can claim it.
+            </p>
             <button
               type="button"
               onClick={() => void shareLink(newest)}
@@ -109,12 +127,17 @@ function GiftsPage() {
         ) : (
           <ul className="space-y-2">
             {gifts.map((g) => (
-              <li key={g.id} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+              <li
+                key={g.id}
+                className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3"
+              >
                 <Gift className="h-5 w-5 shrink-0 text-primary" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">
                     {g.product_name}
-                    {g.recipient_name ? <span className="font-normal"> for {g.recipient_name}</span> : null}
+                    {g.recipient_name ? (
+                      <span className="font-normal"> for {g.recipient_name}</span>
+                    ) : null}
                   </p>
                   <p
                     className={cn(
@@ -122,6 +145,7 @@ function GiftsPage() {
                       g.status === "claimed" ? "text-[#5f7a52]" : "text-muted-foreground",
                     )}
                   >
+                    {g.kind === "transfer" ? "Your pass, gifted · " : ""}
                     {g.status === "claimed"
                       ? `Claimed${g.claimed_by_name ? ` by ${g.claimed_by_name}` : ""} on ${formatRewardDate(g.claimed_at)}`
                       : g.status === "open"
@@ -131,6 +155,15 @@ function GiftsPage() {
                           : "Refunded"}
                   </p>
                 </div>
+                {g.status === "open" && g.kind === "transfer" ? (
+                  <button
+                    type="button"
+                    onClick={() => void takeBack(g)}
+                    className="shrink-0 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+                  >
+                    Take back
+                  </button>
+                ) : null}
                 {g.status === "open" ? (
                   <button
                     type="button"
