@@ -13,7 +13,6 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { EmptyClassesReview } from "@/components/admin/EmptyClassesReview";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -583,11 +582,7 @@ function PayoutsPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4">
           <TabsTrigger value="inbox">All invoices</TabsTrigger>
-          <TabsTrigger value="empty">Empty classes</TabsTrigger>
         </TabsList>
-        <TabsContent value="empty" className="mt-0">
-          <EmptyClassesReview />
-        </TabsContent>
         <TabsContent value="inbox" className="mt-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">

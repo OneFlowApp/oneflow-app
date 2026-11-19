@@ -29,6 +29,7 @@ export type AdminArea =
   | "waivers"
   | "badges"
   | "reviews"
+  | "empty-classes"
   | "gameboard"
   | "challenge"
   | "promotions"
@@ -52,6 +53,7 @@ const ALL_AREAS: readonly AdminArea[] = [
   "waivers",
   "badges",
   "reviews",
+  "empty-classes",
   "gameboard",
   "challenge",
   "promotions",
@@ -70,7 +72,7 @@ const except = (...excluded: AdminArea[]) => ALL_AREAS.filter((a) => !excluded.i
 const PAGES: Record<StaffRole, readonly AdminArea[]> = {
   director: ALL_AREAS,
   management: except("payouts", "transactions"),
-  marketing: except("schedule", "payouts", "transactions", "reviews"),
+  marketing: except("schedule", "payouts", "transactions", "reviews", "empty-classes"),
   front_desk: ["check-in", "bookings"],
   guide: ["check-in", "bookings"],
   boh: ["bookings"],
