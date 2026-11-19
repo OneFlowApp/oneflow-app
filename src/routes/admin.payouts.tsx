@@ -141,9 +141,9 @@ function PayoutsPage() {
   const [guideFilter, setGuideFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [sort, setSort] = useState<
-    "submitted_desc" | "guide_name_asc" | "amount_desc" | "status"
-  >("submitted_desc");
+  const [sort, setSort] = useState<"submitted_desc" | "guide_name_asc" | "amount_desc" | "status">(
+    "submitted_desc",
+  );
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState<InvoiceRow | null>(null);
 
@@ -170,7 +170,11 @@ function PayoutsPage() {
         first_name?: string;
         last_name?: string;
       } | null;
-      setRole(classifyRole(effectiveRole({ role: rec?.role ?? null, secondary_roles: rec?.secondary_roles ?? null })));
+      setRole(
+        classifyRole(
+          effectiveRole({ role: rec?.role ?? null, secondary_roles: rec?.secondary_roles ?? null }),
+        ),
+      );
       setMeName(`${rec?.first_name ?? ""} ${rec?.last_name ?? ""}`.trim() || "Guide");
     })();
   }, []);
@@ -198,17 +202,16 @@ function PayoutsPage() {
       return;
     }
     const rows: InvoiceRow[] = (data ?? []).map((raw: Record<string, unknown>) => {
-      const p = (Array.isArray(raw.guide) ? raw.guide[0] : raw.guide) as
-        | { first_name?: string; last_name?: string; email?: string }
-        | null;
-      const li: LineItem[] = Array.isArray(raw.line_items)
-        ? (raw.line_items as LineItem[])
-        : [];
+      const p = (Array.isArray(raw.guide) ? raw.guide[0] : raw.guide) as {
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+      } | null;
+      const li: LineItem[] = Array.isArray(raw.line_items) ? (raw.line_items as LineItem[]) : [];
       return {
         id: String(raw.id),
         guide_id: String(raw.guide_id),
-        guideName:
-          `${p?.first_name ?? ""} ${p?.last_name ?? ""}`.toString().trim() || "Guide",
+        guideName: `${p?.first_name ?? ""} ${p?.last_name ?? ""}`.toString().trim() || "Guide",
         guideEmail: p?.email ?? "",
         submitted_at: String(raw.submitted_at ?? ""),
         period_start: (raw.period_start as string | null) ?? null,
@@ -244,22 +247,34 @@ function PayoutsPage() {
       .eq("is_cancelled", false)
       .or(`guide_id.eq.${me},guide_name.ilike.${meName}`)
       .order("starts_at", { ascending: false });
+    // Empty classes the guide left don't count towards their month-end list.
+    const ids = (classRows ?? []).map((c: Record<string, unknown>) => String(c.id));
+    const { data: leftRows } = ids.length
+      ? await supabase
+          .from("empty_class_checkins")
+          .select("class_id")
+          .eq("outcome", "left")
+          .in("class_id", ids)
+      : { data: [] };
+    const leftIds = new Set(((leftRows ?? []) as { class_id: string }[]).map((r) => r.class_id));
     setLoadingClasses(false);
     if (error) {
       console.error(error);
       toast.error(supabaseErrorMessage(error, "Could not load classes"));
       return;
     }
-    const items: LineItem[] = (classRows ?? []).map((c: Record<string, unknown>) => ({
-      class_id: String(c.id),
-      class_name: String(c.name ?? ""),
-      class_type: String(c.class_type ?? ""),
-      starts_at: String(c.starts_at ?? ""),
-      location: (c.location as string | null) ?? null,
-      participants: Number(c.booked_count ?? 0),
-      capacity: Number(c.capacity ?? 0),
-      rate_zar: 0,
-    }));
+    const items: LineItem[] = (classRows ?? [])
+      .filter((c: Record<string, unknown>) => !leftIds.has(String(c.id)))
+      .map((c: Record<string, unknown>) => ({
+        class_id: String(c.id),
+        class_name: String(c.name ?? ""),
+        class_type: String(c.class_type ?? ""),
+        starts_at: String(c.starts_at ?? ""),
+        location: (c.location as string | null) ?? null,
+        participants: Number(c.booked_count ?? 0),
+        capacity: Number(c.capacity ?? 0),
+        rate_zar: 0,
+      }));
     setGuideClasses(items);
     const initialRates: Record<string, string> = {};
     for (const it of items) initialRates[it.class_id ?? ""] = "";
@@ -381,7 +396,9 @@ function PayoutsPage() {
     out = [...out].sort((a, b) => {
       switch (sort) {
         case "guide_name_asc":
-          return a.guideName.localeCompare(b.guideName) || b.submitted_at.localeCompare(a.submitted_at);
+          return (
+            a.guideName.localeCompare(b.guideName) || b.submitted_at.localeCompare(a.submitted_at)
+          );
         case "amount_desc":
           return b.total_amount - a.total_amount || b.submitted_at.localeCompare(a.submitted_at);
         case "status": {
@@ -429,10 +446,7 @@ function PayoutsPage() {
     if (next === "paid") {
       patch.paid_at = new Date().toISOString();
     }
-    const { error } = await supabase
-      .from("guide_invoices")
-      .update(patch)
-      .eq("id", inv.id);
+    const { error } = await supabase.from("guide_invoices").update(patch).eq("id", inv.id);
     if (error) {
       console.error("payout operation failed", error);
       toast.error(supabaseErrorMessage(error, "Operation failed — please try again"));
@@ -449,9 +463,7 @@ function PayoutsPage() {
     return (
       <div>
         <PageHeader title="Payouts" />
-        <p className="text-sm text-muted-foreground">
-          You don't have access to payouts.
-        </p>
+        <p className="text-sm text-muted-foreground">You don't have access to payouts.</p>
       </div>
     );
   }
@@ -469,7 +481,11 @@ function PayoutsPage() {
               disabled={submitting || guideTotal <= 0}
               className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
               Submit invoice ({formatRand(guideTotal)})
             </Button>
           }
@@ -923,9 +939,7 @@ function InvoiceDetail({
                     <td className="px-3 py-2 text-right tabular-nums">
                       {li.participants}/{li.capacity}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatRand(li.rate_zar)}
-                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatRand(li.rate_zar)}</td>
                   </tr>
                 ))}
               </tbody>

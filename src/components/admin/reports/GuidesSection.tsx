@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowUp, CalendarCheck, Download, UserCheck, Users } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  CalendarCheck,
+  Download,
+  UserCheck,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/admin/StatCard";
@@ -102,7 +110,20 @@ export function GuidesSection({ bounds }: { bounds: PeriodBounds }) {
         return;
       }
 
-      const classes = (classesRes.data ?? []) as ClassRow[];
+      const allClasses = (classesRes.data ?? []) as ClassRow[];
+      // Empty classes the guide left don't count as sessions taught.
+      const { data: leftRows } = allClasses.length
+        ? await supabase
+            .from("empty_class_checkins")
+            .select("class_id")
+            .eq("outcome", "left")
+            .in(
+              "class_id",
+              allClasses.map((c) => c.id),
+            )
+        : { data: [] };
+      const leftIds = new Set(((leftRows ?? []) as { class_id: string }[]).map((r) => r.class_id));
+      const classes = allClasses.filter((c) => !leftIds.has(c.id));
       const classIds = classes.map((c) => c.id);
       const bookings = await fetchBookingsForClasses(classIds);
       if (cancelled) return;
@@ -143,16 +164,14 @@ export function GuidesSection({ bounds }: { bounds: PeriodBounds }) {
         perGuide.set(guide, entry);
       }
 
-      const rows: GuideRow[] = [...perGuide.entries()]
-        .map(([name, agg]) => ({
-          name,
-          sessions: agg.sessions,
-          attended: agg.attended,
-          booked: agg.booked,
-          capacity: agg.capacity,
-          occupancyPct:
-            agg.capacity > 0 ? Math.round((agg.booked / agg.capacity) * 100) : 0,
-        }));
+      const rows: GuideRow[] = [...perGuide.entries()].map(([name, agg]) => ({
+        name,
+        sessions: agg.sessions,
+        attended: agg.attended,
+        booked: agg.booked,
+        capacity: agg.capacity,
+        occupancyPct: agg.capacity > 0 ? Math.round((agg.booked / agg.capacity) * 100) : 0,
+      }));
 
       setState({
         loading: false,
@@ -203,11 +222,17 @@ export function GuidesSection({ bounds }: { bounds: PeriodBounds }) {
 
   const exportCsv = () => {
     const header = ["Guide", "Sessions", "Attended", "Capacity (sum)", "Avg occupancy %"];
-    const body = sortedRows.map((g) => [g.name, g.sessions, g.attended, g.capacity, g.occupancyPct]);
-    downloadReportCsv(
-      `guides-report-${new Date().toISOString().slice(0, 10)}.csv`,
-      [header, ...body],
-    );
+    const body = sortedRows.map((g) => [
+      g.name,
+      g.sessions,
+      g.attended,
+      g.capacity,
+      g.occupancyPct,
+    ]);
+    downloadReportCsv(`guides-report-${new Date().toISOString().slice(0, 10)}.csv`, [
+      header,
+      ...body,
+    ]);
   };
 
   return (
@@ -223,10 +248,11 @@ export function GuidesSection({ bounds }: { bounds: PeriodBounds }) {
       <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200/70 bg-amber-50/60 px-3 py-2 text-xs text-amber-900">
         <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
         <span>
-          Estimated from <code className="rounded bg-amber-100 px-1 py-0.5">classes.guide_name</code>.
-          Will switch to <code className="rounded bg-amber-100 px-1 py-0.5">classes.guide_id</code>
-          {" "}once every class is linked to a guides FK. Until then, two records with the same
-          spelling roll up; typos split a guide across rows. TODO.
+          Estimated from{" "}
+          <code className="rounded bg-amber-100 px-1 py-0.5">classes.guide_name</code>. Will switch
+          to <code className="rounded bg-amber-100 px-1 py-0.5">classes.guide_id</code> once every
+          class is linked to a guides FK. Until then, two records with the same spelling roll up;
+          typos split a guide across rows. TODO.
         </span>
       </div>
 
@@ -238,9 +264,7 @@ export function GuidesSection({ bounds }: { bounds: PeriodBounds }) {
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {state.loading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-2xl" />
-          ))
+          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)
         ) : (
           <>
             <StatCard
@@ -305,22 +329,38 @@ export function GuidesSection({ bounds }: { bounds: PeriodBounds }) {
               <thead className="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-2 py-2 font-medium">
-                    <button type="button" onClick={() => toggleSort("name")} className="hover:text-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("name")}
+                      className="hover:text-foreground"
+                    >
                       Guide <SortIcon k="name" />
                     </button>
                   </th>
                   <th className="px-2 py-2 text-right font-medium">
-                    <button type="button" onClick={() => toggleSort("sessions")} className="hover:text-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("sessions")}
+                      className="hover:text-foreground"
+                    >
                       Sessions <SortIcon k="sessions" />
                     </button>
                   </th>
                   <th className="px-2 py-2 text-right font-medium">
-                    <button type="button" onClick={() => toggleSort("attended")} className="hover:text-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("attended")}
+                      className="hover:text-foreground"
+                    >
                       Attended <SortIcon k="attended" />
                     </button>
                   </th>
                   <th className="px-2 py-2 text-right font-medium">
-                    <button type="button" onClick={() => toggleSort("occupancy")} className="hover:text-foreground">
+                    <button
+                      type="button"
+                      onClick={() => toggleSort("occupancy")}
+                      className="hover:text-foreground"
+                    >
                       Avg occupancy <SortIcon k="occupancy" />
                     </button>
                   </th>

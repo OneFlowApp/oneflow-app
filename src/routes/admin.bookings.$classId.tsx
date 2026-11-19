@@ -436,7 +436,7 @@ function BookingClassDetailPage() {
         }
       />
 
-      {!loading && cls ? (
+      {!loading && cls && ["director", "management"].includes(effectiveRole(profile) ?? "") ? (
         <EmptyClassCheckIn
           classId={cls.id}
           startsAt={cls.starts_at}

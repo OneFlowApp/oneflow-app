@@ -50,6 +50,7 @@ import { Route as AdminPayoutsRouteImport } from './routes/admin.payouts'
 import { Route as AdminInstallAppRouteImport } from './routes/admin.install-app'
 import { Route as AdminGuidesRouteImport } from './routes/admin.guides'
 import { Route as AdminGameboardRouteImport } from './routes/admin.gameboard'
+import { Route as AdminEmptyClassesRouteImport } from './routes/admin.empty-classes'
 import { Route as AdminEmailRouteImport } from './routes/admin.email'
 import { Route as AdminCustomersRouteImport } from './routes/admin.customers'
 import { Route as AdminClientCommsRouteImport } from './routes/admin.client-comms'
@@ -266,6 +267,11 @@ const AdminGameboardRoute = AdminGameboardRouteImport.update({
   path: '/gameboard',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminEmptyClassesRoute = AdminEmptyClassesRouteImport.update({
+  id: '/empty-classes',
+  path: '/empty-classes',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminEmailRoute = AdminEmailRouteImport.update({
   id: '/email',
   path: '/email',
@@ -344,6 +350,7 @@ export interface FileRoutesByFullPath {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/empty-classes': typeof AdminEmptyClassesRoute
   '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
@@ -395,6 +402,7 @@ export interface FileRoutesByTo {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/empty-classes': typeof AdminEmptyClassesRoute
   '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
@@ -449,6 +457,7 @@ export interface FileRoutesById {
   '/admin/client-comms': typeof AdminClientCommsRoute
   '/admin/customers': typeof AdminCustomersRouteWithChildren
   '/admin/email': typeof AdminEmailRoute
+  '/admin/empty-classes': typeof AdminEmptyClassesRoute
   '/admin/gameboard': typeof AdminGameboardRoute
   '/admin/guides': typeof AdminGuidesRoute
   '/admin/install-app': typeof AdminInstallAppRoute
@@ -504,6 +513,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/empty-classes'
     | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
@@ -555,6 +565,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/empty-classes'
     | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
@@ -608,6 +619,7 @@ export interface FileRouteTypes {
     | '/admin/client-comms'
     | '/admin/customers'
     | '/admin/email'
+    | '/admin/empty-classes'
     | '/admin/gameboard'
     | '/admin/guides'
     | '/admin/install-app'
@@ -951,6 +963,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminGameboardRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/empty-classes': {
+      id: '/admin/empty-classes'
+      path: '/empty-classes'
+      fullPath: '/admin/empty-classes'
+      preLoaderRoute: typeof AdminEmptyClassesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/email': {
       id: '/admin/email'
       path: '/email'
@@ -1058,6 +1077,7 @@ interface AdminRouteChildren {
   AdminClientCommsRoute: typeof AdminClientCommsRoute
   AdminCustomersRoute: typeof AdminCustomersRouteWithChildren
   AdminEmailRoute: typeof AdminEmailRoute
+  AdminEmptyClassesRoute: typeof AdminEmptyClassesRoute
   AdminGameboardRoute: typeof AdminGameboardRoute
   AdminGuidesRoute: typeof AdminGuidesRoute
   AdminInstallAppRoute: typeof AdminInstallAppRoute
@@ -1083,6 +1103,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminClientCommsRoute: AdminClientCommsRoute,
   AdminCustomersRoute: AdminCustomersRouteWithChildren,
   AdminEmailRoute: AdminEmailRoute,
+  AdminEmptyClassesRoute: AdminEmptyClassesRoute,
   AdminGameboardRoute: AdminGameboardRoute,
   AdminGuidesRoute: AdminGuidesRoute,
   AdminInstallAppRoute: AdminInstallAppRoute,
