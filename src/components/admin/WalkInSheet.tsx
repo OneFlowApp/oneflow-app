@@ -36,7 +36,7 @@ import { formatStudioDateTime } from "@/lib/timezone";
 import { edgeFunctionErrorMessage, supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth";
-import { canSeeMemberPrivateDetails } from "@/lib/roleAccess";
+import { canSeeMemberPrivateDetails, effectiveRole } from "@/lib/roleAccess";
 
 const SAGE = "#a3b693";
 const SEARCH_DEBOUNCE_MS = 300;
@@ -94,7 +94,11 @@ function isValidEmail(v: string): boolean {
 }
 
 /** Contact line under a member: email for Director/Management/Marketing, phone for everyone else. */
-function memberContact(m: Pick<MemberHit, "email" | "phone">, showPrivate: boolean, empty: string): string {
+function memberContact(
+  m: Pick<MemberHit, "email" | "phone">,
+  showPrivate: boolean,
+  empty: string,
+): string {
   if (showPrivate) return m.email?.trim() || empty;
   return m.phone?.trim() || empty;
 }
@@ -127,8 +131,16 @@ type Props = {
   currentClassId?: string;
 };
 
-export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, currentClassId }: Props) {
+export function WalkInSheet({
+  open,
+  onOpenChange,
+  onDone,
+  todayOnly = false,
+  currentClassId,
+}: Props) {
   const { profile: viewer } = useAuth();
+  // Only Director and Management can give a free class.
+  const canComp = ["director", "management"].includes(effectiveRole(viewer) ?? "");
   const showPrivate = canSeeMemberPrivateDetails(viewer);
   const [mode, setMode] = useState<WalkInMode>("existing");
 
@@ -149,9 +161,9 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
   const [credits, setCredits] = useState<CreditOption[]>([]);
   const [loadingCredits, setLoadingCredits] = useState(false);
   /** `"cash"` = comp / no credit; otherwise a user_credits id. */
-  const [paymentChoice, setPaymentChoice] = useState<string>("cash");
+  const [paymentChoice, setPaymentChoice] = useState<string>("unpaid");
   /** New person: checked in before paying. */
-  const [newUnpaid, setNewUnpaid] = useState(false);
+  const [newUnpaid, setNewUnpaid] = useState(true);
 
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -168,8 +180,8 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
     setClassId("");
     setWaiverAgreed(false);
     setCredits([]);
-    setPaymentChoice("cash");
-    setNewUnpaid(false);
+    setPaymentChoice("unpaid");
+    setNewUnpaid(true);
     setFutureClasses([]);
 
     void (async () => {
@@ -187,9 +199,12 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         .gte("starts_at", sinceIso)
         .order("starts_at")
         .limit(1000);
-      const jhbDay = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+      const jhbDay = (iso: string) =>
+        new Date(iso).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
       const todayKey = jhbDay(new Date().toISOString());
-      const data = ((raw ?? []) as FutureClassRow[]).filter((c) => !todayOnly || jhbDay(c.starts_at) === todayKey);
+      const data = ((raw ?? []) as FutureClassRow[]).filter(
+        (c) => !todayOnly || jhbDay(c.starts_at) === todayKey,
+      );
 
       if (error) {
         console.error("walk-in: future classes load failed", error);
@@ -215,7 +230,9 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
       }
       setFutureClasses(rows);
       const defaultId =
-        currentClassId && rows[0]?.id === currentClassId ? currentClassId : pickNextUpcomingClassId(rows);
+        currentClassId && rows[0]?.id === currentClassId
+          ? currentClassId
+          : pickNextUpcomingClassId(rows);
       setClassId(defaultId ?? rows[0]?.id ?? "");
       setLoadingClasses(false);
     })();
@@ -278,7 +295,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
   useEffect(() => {
     if (!open || mode !== "existing" || !selectedMember?.id) {
       setCredits([]);
-      setPaymentChoice("cash");
+      setPaymentChoice("unpaid");
       return;
     }
 
@@ -299,7 +316,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         console.error("walk-in credits load failed", error);
         toast.error(supabaseErrorMessage(error, "Could not load member credits"));
         setCredits([]);
-        setPaymentChoice("cash");
+        setPaymentChoice("unpaid");
         setLoadingCredits(false);
         return;
       }
@@ -337,11 +354,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
 
   const memberDetailsComplete = useMemo(() => {
     if (mode === "existing") return Boolean(selectedMember?.id);
-    return (
-      firstName.trim().length > 0 &&
-      lastName.trim().length > 0 &&
-      isValidEmail(email)
-    );
+    return firstName.trim().length > 0 && lastName.trim().length > 0 && isValidEmail(email);
   }, [mode, selectedMember, firstName, lastName, email]);
 
   const canCheckIn =
@@ -358,7 +371,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
     setMemberQuery("");
     setMemberHits([]);
     setCredits([]);
-    setPaymentChoice("cash");
+    setPaymentChoice("unpaid");
     setWaiverAgreed(false);
   };
 
@@ -372,10 +385,11 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
       return;
     }
 
-    const noCredit = paymentChoice === "cash" || paymentChoice === "unpaid" || paymentChoice === "dwk";
+    const noCredit =
+      paymentChoice === "cash" || paymentChoice === "unpaid" || paymentChoice === "dwk";
     const payment_method = noCredit ? "cash" : "credit";
     const credit_id = noCredit ? null : paymentChoice;
-    const markUnpaid = mode === "existing" ? paymentChoice === "unpaid" : newUnpaid;
+    const markUnpaid = mode === "existing" ? paymentChoice === "unpaid" : newUnpaid || !canComp;
 
     setSaving(true);
 
@@ -442,6 +456,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         error?: string;
         role?: string;
         booking_id?: string;
+        booked_only?: boolean;
       };
 
       if (!result?.ok) {
@@ -456,7 +471,10 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
           .from("bookings")
           .update({ paid_where: "De Waterkant pack" })
           .eq("id", result.booking_id);
-        if (dwkErr) toast.error(supabaseErrorMessage(dwkErr, "Checked in, but could not note the De Waterkant pack"));
+        if (dwkErr)
+          toast.error(
+            supabaseErrorMessage(dwkErr, "Checked in, but could not note the De Waterkant pack"),
+          );
       }
 
       if (markUnpaid && result.booking_id) {
@@ -485,7 +503,11 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
         });
       }
 
-      toast.success(walkInCheckInToastMessage(displayName, result.role ?? "customer"));
+      toast.success(
+        result.booked_only
+          ? `${displayName} is booked in. Check them in when they arrive.`
+          : walkInCheckInToastMessage(displayName, result.role ?? "customer"),
+      );
       setSaving(false);
       onOpenChange(false);
       onDone();
@@ -547,7 +569,11 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
                       {showPrivate ? memberLabel(selectedMember) : memberName(selectedMember)}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {memberContact(selectedMember, showPrivate, showPrivate ? "No email on file" : "No phone on file")}
+                      {memberContact(
+                        selectedMember,
+                        showPrivate,
+                        showPrivate ? "No email on file" : "No phone on file",
+                      )}
                     </p>
                   </div>
                   <Button
@@ -600,7 +626,9 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
                                 setWaiverAgreed(false);
                               }}
                             >
-                              <span className="font-medium">{showPrivate ? memberLabel(m) : memberName(m)}</span>
+                              <span className="font-medium">
+                                {showPrivate ? memberLabel(m) : memberName(m)}
+                              </span>
                               <span className="text-xs text-muted-foreground">
                                 {memberContact(m, showPrivate, "—")}
                               </span>
@@ -656,9 +684,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
             <Label>Class</Label>
             <Select value={classId} onValueChange={setClassId} disabled={loadingClasses}>
               <SelectTrigger>
-                <SelectValue
-                  placeholder={loadingClasses ? "Loading classes…" : "Pick a class"}
-                />
+                <SelectValue placeholder={loadingClasses ? "Loading classes…" : "Pick a class"} />
               </SelectTrigger>
               <SelectContent>
                 {futureClasses.map((c) => (
@@ -670,8 +696,8 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
             </Select>
             <p className="text-xs text-muted-foreground">
               {todayOnly
-                  ? "Today’s classes only. Defaults to the class running now or the next one."
-                  : "Today’s and upcoming classes. Defaults to the class you’re on, or the one running now."}
+                ? "Today’s classes only. Defaults to the class running now or the next one."
+                : "Today’s and upcoming classes. Defaults to the class you’re on, or the one running now."}
             </p>
           </div>
 
@@ -696,7 +722,7 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
                     ))}
                     <SelectItem value="unpaid">Not paid yet (mark unpaid)</SelectItem>
                     <SelectItem value="dwk">Pack at De Waterkant (Mindbody)</SelectItem>
-                    <SelectItem value="cash">Comp — no credit (cash)</SelectItem>
+                    {canComp ? <SelectItem value="cash">Comp (free, no pack)</SelectItem> : null}
                   </SelectContent>
                 </Select>
               )}
@@ -710,14 +736,19 @@ export function WalkInSheet({ open, onOpenChange, onDone, todayOnly = false, cur
 
           {mode === "new" ? (
             <p className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-              New person walk-ins are checked in as cash/comp. Use Existing member to deduct a pack.
+              New people have no pack yet, so they're marked Not paid yet. Load their pack and the
+              class comes off it.
             </p>
           ) : null}
 
           {mode === "new" ? (
             <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={newUnpaid} onCheckedChange={(v) => setNewUnpaid(v === true)} />
-              Not paid yet (mark unpaid)
+              <Checkbox
+                checked={newUnpaid || !canComp}
+                disabled={!canComp}
+                onCheckedChange={(v) => setNewUnpaid(v === true)}
+              />
+              {canComp ? "Not paid yet (untick to give a free class)" : "Not paid yet"}
             </label>
           ) : null}
 
