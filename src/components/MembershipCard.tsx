@@ -418,7 +418,8 @@ export function MembershipCard() {
 
               <div
                 className={cn(
-                  "relative mx-auto mt-2 w-full max-w-sm overflow-hidden rounded-3xl p-6 shadow-2xl",
+                  // shrink-0: in this scrolling column the card must never be squashed to fit the screen.
+                  "relative mx-auto mt-2 w-full max-w-sm shrink-0 overflow-hidden rounded-3xl p-6 shadow-2xl",
                   style.card,
                   style.text,
                 )}
