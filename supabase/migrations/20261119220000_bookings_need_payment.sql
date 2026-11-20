@@ -23,7 +23,7 @@ begin
   end if;
   if new.status::text in ('confirmed', 'attended')
      and new.credit_id is null
-     and coalesce(new.payment_method, '') not in ('free', 'flow_points') then
+     and coalesce(new.payment_method::text, '') not in ('free', 'flow_points') then
     raise exception 'Please choose a pass to book this class';
   end if;
   return new;
