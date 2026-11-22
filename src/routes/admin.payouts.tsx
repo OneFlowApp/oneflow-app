@@ -67,6 +67,8 @@ type LineItem = {
   participants: number;
   capacity: number;
   rate_zar: number;
+  /** Taught for free: listed on the invoice at R0. */
+  free?: boolean;
 };
 
 type InvoiceRow = {
@@ -93,6 +95,13 @@ function classifyRole(role: string | null | undefined): Role {
   if (r === "management") return "management";
   if (r === "guide") return "guide";
   return "other";
+}
+
+/** Submitted after the 27th of the month the pay cycle ends in. */
+function isLateInvoice(i: { submitted_at: string; period_end: string | null }): boolean {
+  if (!i.period_end || !i.submitted_at) return false;
+  const due = new Date(`${i.period_end.slice(0, 8)}27T23:59:59+02:00`).getTime();
+  return new Date(i.submitted_at).getTime() > due;
 }
 
 function formatRand(n: number): string {
@@ -133,7 +142,7 @@ function PayoutsPage() {
   const [meName, setMeName] = useState<string>("");
 
   // Director side
-  const [tab, setTab] = useState<string>("inbox");
+  const [tab, setTab] = useState<string>("submitted");
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [q, setQ] = useState("");
@@ -153,6 +162,53 @@ function PayoutsPage() {
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
+  /**
+   * Pay cycle: the 26th of one month to the 25th of the next. Invoices are due by the 27th.
+   * "current" is the cycle ending this month's 25th (or next month's, from the 28th);
+   * "previous" is the one before.
+   */
+  const [period, setPeriod] = useState<"current" | "previous">("current");
+  const periodRange = useMemo(() => {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+    let y = Number(today.slice(0, 4));
+    let m = Number(today.slice(5, 7));
+    const day = Number(today.slice(8, 10));
+    if (day >= 28) m += 1;
+    if (period === "previous") m -= 1;
+    const norm = (yy: number, mm: number) => {
+      while (mm > 12) {
+        mm -= 12;
+        yy += 1;
+      }
+      while (mm < 1) {
+        mm += 12;
+        yy -= 1;
+      }
+      return [yy, mm] as const;
+    };
+    [y, m] = norm(y, m);
+    const [py, pm] = norm(y, m - 1);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const start = `${py}-${pad(pm)}-26`;
+    const end = `${y}-${pad(m)}-25`;
+    const nextStart = `${y}-${pad(m)}-26`;
+    const due = `${y}-${pad(m)}-27`;
+    const fmt = (d: string) =>
+      new Date(`${d}T12:00:00Z`).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+    return {
+      start,
+      end,
+      nextStart,
+      due,
+      label: `${fmt(start)} – ${fmt(end)}`,
+      dueLabel: new Date(`${due}T12:00:00Z`).toLocaleDateString("en-ZA", {
+        day: "numeric",
+        month: "long",
+      }),
+      overdue: today > due,
+      open: today <= end,
+    };
+  }, [period]);
 
   useEffect(() => {
     void (async () => {
@@ -170,10 +226,21 @@ function PayoutsPage() {
         first_name?: string;
         last_name?: string;
       } | null;
+      // Directors see every invoice. Anyone else who teaches (even with another role) sees their own.
+      const roleSet = new Set(
+        [rec?.role, ...(rec?.secondary_roles ?? [])].map((x) => String(x ?? "").toLowerCase()),
+      );
       setRole(
-        classifyRole(
-          effectiveRole({ role: rec?.role ?? null, secondary_roles: rec?.secondary_roles ?? null }),
-        ),
+        roleSet.has("director")
+          ? "director"
+          : roleSet.has("guide")
+            ? "guide"
+            : classifyRole(
+                effectiveRole({
+                  role: rec?.role ?? null,
+                  secondary_roles: rec?.secondary_roles ?? null,
+                }),
+              ),
       );
       setMeName(`${rec?.first_name ?? ""} ${rec?.last_name ?? ""}`.trim() || "Guide");
     })();
@@ -237,13 +304,15 @@ function PayoutsPage() {
   const loadGuideClasses = useCallback(async () => {
     if (!me) return;
     setLoadingClasses(true);
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
+    const fromIso = new Date(`${periodRange.start}T00:00:00+02:00`).toISOString();
+    const toIso = new Date(
+      Math.min(new Date(`${periodRange.nextStart}T00:00:00+02:00`).getTime(), Date.now()),
+    ).toISOString();
     const { data: classRows, error } = await supabase
       .from("classes")
       .select("id, name, class_type, starts_at, location, capacity, booked_count, guide_id")
-      .gte("starts_at", since.toISOString())
-      .lte("starts_at", new Date().toISOString())
+      .gte("starts_at", fromIso)
+      .lt("starts_at", toIso)
       .eq("is_cancelled", false)
       .or(`guide_id.eq.${me},guide_name.ilike.${meName}`)
       .order("starts_at", { ascending: false });
@@ -257,6 +326,18 @@ function PayoutsPage() {
           .in("class_id", ids)
       : { data: [] };
     const leftIds = new Set(((leftRows ?? []) as { class_id: string }[]).map((r) => r.class_id));
+    // Classes already on one of their invoices (not rejected) can't be invoiced twice.
+    const { data: myInvoices } = await supabase
+      .from("guide_invoices")
+      .select("line_items, status")
+      .eq("guide_id", me);
+    for (const inv of (myInvoices ?? []) as {
+      line_items: LineItem[] | null;
+      status: string | null;
+    }[]) {
+      if (inv.status === "rejected") continue;
+      for (const li of inv.line_items ?? []) if (li.class_id) leftIds.add(li.class_id);
+    }
     setLoadingClasses(false);
     if (error) {
       console.error(error);
@@ -279,7 +360,7 @@ function PayoutsPage() {
     const initialRates: Record<string, string> = {};
     for (const it of items) initialRates[it.class_id ?? ""] = "";
     setRates(initialRates);
-  }, [me, meName]);
+  }, [me, meName, periodRange]);
 
   useEffect(() => {
     if (isGuide) void loadGuideClasses();
@@ -306,20 +387,21 @@ function PayoutsPage() {
     setSubmitting(true);
     try {
       const lineItems = guideClasses
-        .map((it) => ({
-          ...it,
-          rate_zar: Number(rates[it.class_id ?? ""] || 0),
-        }))
-        .filter((it) => it.rate_zar > 0);
+        .map((it) => {
+          const v = rates[it.class_id ?? ""] ?? "";
+          return v === "free"
+            ? { ...it, rate_zar: 0, free: true }
+            : { ...it, rate_zar: Number(v || 0), free: false };
+        })
+        .filter((it) => it.free || it.rate_zar > 0);
       if (lineItems.length === 0) {
-        toast.error("Add a rate to at least one class");
+        toast.error("Add a rate, or mark Free, for at least one class");
         setSubmitting(false);
         return;
       }
       const total = lineItems.reduce((s, it) => s + it.rate_zar, 0);
-      const periodEnd = new Date();
-      const periodStart = new Date();
-      periodStart.setDate(periodStart.getDate() - 30);
+      const periodStart = new Date(`${periodRange.start}T12:00:00Z`);
+      const periodEnd = new Date(`${periodRange.end}T12:00:00Z`);
       const { data: inserted, error } = await supabase
         .from("guide_invoices")
         .insert({
@@ -338,7 +420,7 @@ function PayoutsPage() {
       const breakdown = lineItems
         .map(
           (it) =>
-            `<li>${formatDay(it.starts_at)} — ${it.class_name} (${it.class_type}) — R${it.rate_zar}</li>`,
+            `<li>${formatDay(it.starts_at)} — ${it.class_name} (${it.class_type}) — ${it.free ? "Free" : `R${it.rate_zar}`}</li>`,
         )
         .join("");
       await supabase.functions.invoke("send-email", {
@@ -473,12 +555,12 @@ function PayoutsPage() {
       <div>
         <PageHeader
           title="Submit invoice"
-          description={`Hi ${meName}, log the rate for each class you taught in the last 30 days.`}
+          description={`Hi ${meName}, add your rate for each class you taught ${periodRange.label}. Due by ${periodRange.dueLabel}.`}
           actions={
             <Button
               type="button"
               onClick={() => setConfirmSubmitOpen(true)}
-              disabled={submitting || guideTotal <= 0}
+              disabled={submitting || (guideTotal <= 0 && !Object.values(rates).includes("free"))}
               className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
               {submitting ? (
@@ -491,6 +573,39 @@ function PayoutsPage() {
           }
         />
 
+        <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice month">
+          {(["previous", "current"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={period === p}
+              onClick={() => setPeriod(p)}
+              className={
+                period === p
+                  ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-4 py-1.5 text-sm font-semibold text-white"
+                  : "rounded-full border border-border bg-card px-4 py-1.5 text-sm font-semibold"
+              }
+            >
+              {p === "previous" ? "Previous cycle" : "This cycle"}
+            </button>
+          ))}
+        </div>
+        <p
+          className={
+            periodRange.overdue
+              ? "mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              : "mb-4 rounded-xl border border-[#d4af37]/50 bg-[#d4af37]/10 px-3 py-2 text-sm"
+          }
+        >
+          {periodRange.label} ·{" "}
+          {periodRange.overdue
+            ? `Was due by ${periodRange.dueLabel}. Submit as soon as you can.`
+            : periodRange.open
+              ? `This cycle is still running. Submit on the 26th or 27th, by ${periodRange.dueLabel}.`
+              : `Submit by ${periodRange.dueLabel}.`}
+        </p>
+
         {loadingClasses ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -500,7 +615,10 @@ function PayoutsPage() {
         ) : guideClasses.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
             <CircleDollarSign className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-            <p className="text-sm text-muted-foreground">No classes taught in the last 30 days.</p>
+            <p className="text-sm text-muted-foreground">
+              No classes to invoice for {periodRange.label}. Classes already on an invoice
+              aren&apos;t listed again.
+            </p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -581,8 +699,28 @@ function PayoutsPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4">
+          <TabsTrigger value="submitted">
+            Submitted ({invoices.filter((i) => i.status === "pending").length})
+          </TabsTrigger>
           <TabsTrigger value="inbox">All invoices</TabsTrigger>
         </TabsList>
+        <TabsContent value="submitted" className="mt-0">
+          <p className="mb-3 text-sm text-muted-foreground">
+            Invoices guides have submitted that are waiting for approval. Pay cycle: 26th to 25th,
+            due by the 27th.
+            <span className="font-medium text-destructive"> Late</span> means submitted after the
+            27th.
+          </p>
+          <InvoicesList
+            loading={loadingInvoices}
+            rows={invoices.filter((i) => i.status === "pending")}
+            isAdmin={isAdmin}
+            showLate
+            onOpen={(inv) => setDetail(inv)}
+            onApprove={(inv) => void setStatus(inv, "approved")}
+            onMarkPaid={(inv) => void setStatus(inv, "paid")}
+          />
+        </TabsContent>
         <TabsContent value="inbox" className="mt-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
@@ -731,10 +869,12 @@ function InvoicesList({
   onOpen,
   onApprove,
   onMarkPaid,
+  showLate = false,
 }: {
   loading: boolean;
   rows: InvoiceRow[];
   isAdmin: boolean;
+  showLate?: boolean;
   onOpen: (inv: InvoiceRow) => void;
   onApprove?: (inv: InvoiceRow) => void;
   onMarkPaid?: (inv: InvoiceRow) => void;
@@ -784,7 +924,14 @@ function InvoicesList({
               }}
               className="cursor-pointer border-t border-border hover:bg-muted/30"
             >
-              <td className="px-5 py-3 font-semibold">{i.guideName}</td>
+              <td className="px-5 py-3 font-semibold">
+                {i.guideName}
+                {showLate && isLateInvoice(i) ? (
+                  <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-destructive">
+                    Late
+                  </span>
+                ) : null}
+              </td>
               <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">
                 {formatDate(i.submitted_at)}
               </td>
@@ -881,10 +1028,26 @@ function ClassRateGroup({
                 id={`rate-${it.class_id}`}
                 type="number"
                 min={0}
-                value={rates[it.class_id ?? ""] ?? ""}
+                disabled={rates[it.class_id ?? ""] === "free"}
+                value={rates[it.class_id ?? ""] === "free" ? "" : (rates[it.class_id ?? ""] ?? "")}
+                placeholder={rates[it.class_id ?? ""] === "free" ? "Free" : ""}
                 onChange={(e) => setRate(it.class_id ?? "", e.target.value)}
-                className="w-32 text-right"
+                className="w-28 text-right"
               />
+              <button
+                type="button"
+                onClick={() =>
+                  setRate(it.class_id ?? "", rates[it.class_id ?? ""] === "free" ? "" : "free")
+                }
+                className={
+                  rates[it.class_id ?? ""] === "free"
+                    ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-3 py-1.5 text-xs font-semibold text-white"
+                    : "rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+                }
+                title="I taught this class for free"
+              >
+                Free
+              </button>
             </div>
           </li>
         ))}
@@ -939,7 +1102,9 @@ function InvoiceDetail({
                     <td className="px-3 py-2 text-right tabular-nums">
                       {li.participants}/{li.capacity}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatRand(li.rate_zar)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {li.free ? "Free" : formatRand(li.rate_zar)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
