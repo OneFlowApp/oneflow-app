@@ -128,6 +128,7 @@ type ClassRow = {
   recurring_group_id: string | null;
   bookings_closed?: boolean | null;
   waitlist_closed?: boolean | null;
+  comp_wellzone?: boolean | null;
 };
 
 type RecurringScope = "single" | "future";
@@ -166,7 +167,7 @@ function toTimeInputValue(d: Date) {
 function addMinutesToTimeInput(timeStr: string, minutes: number): string {
   const [hh, mm] = timeStr.split(":").map(Number);
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return timeStr;
-  const total = ((hh * 60 + mm + minutes) % (24 * 60) + 24 * 60) % (24 * 60);
+  const total = (((hh * 60 + mm + minutes) % (24 * 60)) + 24 * 60) % (24 * 60);
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
@@ -192,13 +193,15 @@ async function findRoomClashes(
     .lt("starts_at", maxEnd.toISOString())
     .gt("ends_at", minStart.toISOString());
   if (error) throw error;
-  const rows = ((data ?? []) as {
-    id: string;
-    name: string | null;
-    title_override: string | null;
-    starts_at: string;
-    ends_at: string;
-  }[]).filter((r) => !excludeIds.has(r.id));
+  const rows = (
+    (data ?? []) as {
+      id: string;
+      name: string | null;
+      title_override: string | null;
+      starts_at: string;
+      ends_at: string;
+    }[]
+  ).filter((r) => !excludeIds.has(r.id));
   const clashes: RoomClash[] = [];
   intervals.forEach((iv, index) => {
     for (const r of rows) {
@@ -275,13 +278,9 @@ function jhbDayLabel(dayKey: string): string {
 function masterDayHeaderLabel(dayKey: string): string {
   const [y, m, d] = dayKey.split("-").map(Number);
   const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
-  const weekday = dt
-    .toLocaleDateString("en-GB", { timeZone: TZ, weekday: "long" })
-    .toUpperCase();
+  const weekday = dt.toLocaleDateString("en-GB", { timeZone: TZ, weekday: "long" }).toUpperCase();
   const day = dt.toLocaleDateString("en-GB", { timeZone: TZ, day: "2-digit" });
-  const month = dt
-    .toLocaleDateString("en-GB", { timeZone: TZ, month: "long" })
-    .toUpperCase();
+  const month = dt.toLocaleDateString("en-GB", { timeZone: TZ, month: "long" }).toUpperCase();
   return `${weekday}, ${day} ${month}`;
 }
 
@@ -731,7 +730,7 @@ function SchedulePage() {
     const { data, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, class_type_id, title_override, credit_covered, is_free, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id, bookings_closed, waitlist_closed",
+        "id, name, class_type, class_type_id, title_override, credit_covered, is_free, location, starts_at, ends_at, capacity, booked_count, guide_id, guide_name, description, is_cancelled, product_id, recurring_group_id, bookings_closed, waitlist_closed, comp_wellzone",
       )
       .gte("starts_at", fromIso)
       .lt("starts_at", toExclusiveIso)
@@ -1011,7 +1010,16 @@ function SchedulePage() {
     }
     return rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repeatMode, dialogMode, dateStr, startTime, endTime, repeatWeeks, repeatEndMode, repeatUntil]);
+  }, [
+    repeatMode,
+    dialogMode,
+    dateStr,
+    startTime,
+    endTime,
+    repeatWeeks,
+    repeatEndMode,
+    repeatUntil,
+  ]);
 
   const resolveGuideIdAndName = (
     selectedGuideId: string,
@@ -1027,11 +1035,7 @@ function SchedulePage() {
     const pick = guides.find(
       (g) => g.guide_id === selectedGuideId || g.profile_id === selectedGuideId,
     );
-    const gid = pick
-      ? guideFkTarget === "profiles"
-        ? pick.profile_id
-        : pick.guide_id
-      : null;
+    const gid = pick ? (guideFkTarget === "profiles" ? pick.profile_id : pick.guide_id) : null;
     const gName = gid ? (guideMap.get(gid) ?? null) : null;
     return { guide_id: gid, guide_name: gName };
   };
@@ -1047,23 +1051,33 @@ function SchedulePage() {
   };
 
   /** Close or reopen bookings / the waitlist for one class (members only; staff can still add people). */
-  const toggleClosed = async (c: ClassRow, field: "bookings_closed" | "waitlist_closed") => {
+  const toggleClosed = async (
+    c: ClassRow,
+    field: "bookings_closed" | "waitlist_closed" | "comp_wellzone",
+  ) => {
     const next = !c[field];
     setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, [field]: next } : r)));
-    const { error } = await supabase.from("classes").update({ [field]: next }).eq("id", c.id);
+    const { error } = await supabase
+      .from("classes")
+      .update({ [field]: next })
+      .eq("id", c.id);
     if (error) {
       setRows((prev) => prev.map((r) => (r.id === c.id ? { ...r, [field]: !next } : r)));
       toast.error(supabaseErrorMessage(error, "Could not save"));
       return;
     }
     toast.success(
-      field === "bookings_closed"
+      field === "comp_wellzone"
         ? next
-          ? "Bookings closed for this class"
-          : "Bookings open again"
-        : next
-          ? "Waitlist closed for this class"
-          : "Waitlist open again",
+          ? "Free Wellzone after this class switched on"
+          : "Free Wellzone after this class switched off"
+        : field === "bookings_closed"
+          ? next
+            ? "Bookings closed for this class"
+            : "Bookings open again"
+          : next
+            ? "Waitlist closed for this class"
+            : "Waitlist open again",
     );
   };
 
@@ -1575,7 +1589,8 @@ function SchedulePage() {
         }
         const { error } = await supabase.from("classes").insert(inserts);
         if (error) throw error;
-        if (!quiet) toast.success(weeks === 1 ? "Class created" : `${weeks} weekly classes created`);
+        if (!quiet)
+          toast.success(weeks === 1 ? "Class created" : `${weeks} weekly classes created`);
       } else {
         const ticket = await attachTicket(start, end);
         const { error } = await supabase.from("classes").insert({
@@ -1585,7 +1600,8 @@ function SchedulePage() {
           ...ticket,
         });
         if (error) throw error;
-        if (!quiet) toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
+        if (!quiet)
+          toast.success(wantsTicket ? "Class and ticket product created" : "Class created");
       }
       if (!quiet) {
         setDialogOpen(false);
@@ -1870,459 +1886,493 @@ function SchedulePage() {
         ))}
       </div>
 
-      {view === "types" ? <ClassTypesPanel canManage={canManage} /> : (
-      <>
-      {/* Slim stats + week pager + filters toggle on one dense strip */}
-      <div className="mb-2 flex flex-col gap-2 border-b border-border pb-2 sm:mb-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-          <span className="inline-flex items-baseline gap-1.5">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Today
-            </span>
-            <span className="font-display text-base font-bold tabular-nums leading-none">
-              {stats.today.toLocaleString()}
-            </span>
-          </span>
-          <span className="text-border" aria-hidden>
-            ·
-          </span>
-          <span className="inline-flex items-baseline gap-1.5">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              This week
-            </span>
-            <span className="font-display text-base font-bold tabular-nums leading-none">
-              {stats.thisWeek.toLocaleString()}
-            </span>
-          </span>
-          <span className="text-border" aria-hidden>
-            ·
-          </span>
-          <span className="inline-flex items-baseline gap-1.5">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              Upcoming
-            </span>
-            <span className="font-display text-base font-bold tabular-nums leading-none">
-              {stats.upcoming.toLocaleString()}
-            </span>
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-0.5 px-2 text-xs"
-              onClick={() => setWeekOffset((o) => o - 1)}
-              aria-label="Previous week"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Prev
-            </Button>
-            <Button
-              type="button"
-              variant={weekOffset === 0 ? "default" : "outline"}
-              size="sm"
-              className={cn(
-                "h-7 px-2.5 text-xs",
-                weekOffset === 0 && "bg-[#a3b693] hover:bg-[#8fa67d]",
-              )}
-              onClick={() => {
-                pendingScrollToNow.current = true;
-                if (weekOffset === 0) {
-                  pendingScrollToNow.current = false;
-                  scrollToNow();
-                } else {
-                  setWeekOffset(0);
-                }
-              }}
-            >
-              This week
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-1.5 border-[#a3b693]/60 px-2.5 text-xs text-[#3d4f36] hover:bg-[#e8efe3]/80"
-              onClick={goToNow}
-              aria-label="Jump to current time"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-[#a3b693]" aria-hidden />
-              Now
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 gap-0.5 px-2 text-xs"
-              onClick={() => setWeekOffset((o) => o + 1)}
-              aria-label="Next week"
-            >
-              Next
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-            <span className="ml-1 text-xs font-medium text-muted-foreground">
-              {weekRangeLabel(viewWeekStart, viewWeekEnd)}
-            </span>
-            {weekOffset === 0 && viewWeekStart < todayKey ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-muted-foreground"
-                onClick={() => setShowEarlierDays((v) => !v)}
-              >
-                {showEarlierDays ? "Hide earlier days" : "Show earlier days"}
-              </Button>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              type="button"
-              variant={filtersOpen ? "secondary" : "outline"}
-              size="sm"
-              className="h-7 gap-1.5 px-2.5 text-xs"
-              aria-expanded={filtersOpen}
-              onClick={() => setFiltersOpen((o) => !o)}
-            >
-              <Filter className="h-3.5 w-3.5" aria-hidden />
-              Filters
-              {classesFilterCount > 0 ? (
-                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-primary-foreground">
-                  {classesFilterCount}
+      {view === "types" ? (
+        <ClassTypesPanel canManage={canManage} />
+      ) : (
+        <>
+          {/* Slim stats + week pager + filters toggle on one dense strip */}
+          <div className="mb-2 flex flex-col gap-2 border-b border-border pb-2 sm:mb-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Today
                 </span>
-              ) : null}
-            </Button>
-            {classesFilterCount > 0 ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-                onClick={clearClassesFilters}
-              >
-                <X className="h-3.5 w-3.5" aria-hidden />
-                Clear
-              </Button>
+                <span className="font-display text-base font-bold tabular-nums leading-none">
+                  {stats.today.toLocaleString()}
+                </span>
+              </span>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  This week
+                </span>
+                <span className="font-display text-base font-bold tabular-nums leading-none">
+                  {stats.thisWeek.toLocaleString()}
+                </span>
+              </span>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Upcoming
+                </span>
+                <span className="font-display text-base font-bold tabular-nums leading-none">
+                  {stats.upcoming.toLocaleString()}
+                </span>
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-0.5 px-2 text-xs"
+                  onClick={() => setWeekOffset((o) => o - 1)}
+                  aria-label="Previous week"
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                  Prev
+                </Button>
+                <Button
+                  type="button"
+                  variant={weekOffset === 0 ? "default" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "h-7 px-2.5 text-xs",
+                    weekOffset === 0 && "bg-[#a3b693] hover:bg-[#8fa67d]",
+                  )}
+                  onClick={() => {
+                    pendingScrollToNow.current = true;
+                    if (weekOffset === 0) {
+                      pendingScrollToNow.current = false;
+                      scrollToNow();
+                    } else {
+                      setWeekOffset(0);
+                    }
+                  }}
+                >
+                  This week
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 border-[#a3b693]/60 px-2.5 text-xs text-[#3d4f36] hover:bg-[#e8efe3]/80"
+                  onClick={goToNow}
+                  aria-label="Jump to current time"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#a3b693]" aria-hidden />
+                  Now
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-0.5 px-2 text-xs"
+                  onClick={() => setWeekOffset((o) => o + 1)}
+                  aria-label="Next week"
+                >
+                  Next
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+                <span className="ml-1 text-xs font-medium text-muted-foreground">
+                  {weekRangeLabel(viewWeekStart, viewWeekEnd)}
+                </span>
+                {weekOffset === 0 && viewWeekStart < todayKey ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-muted-foreground"
+                    onClick={() => setShowEarlierDays((v) => !v)}
+                  >
+                    {showEarlierDays ? "Hide earlier days" : "Show earlier days"}
+                  </Button>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant={filtersOpen ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-7 gap-1.5 px-2.5 text-xs"
+                  aria-expanded={filtersOpen}
+                  onClick={() => setFiltersOpen((o) => !o)}
+                >
+                  <Filter className="h-3.5 w-3.5" aria-hidden />
+                  Filters
+                  {classesFilterCount > 0 ? (
+                    <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-none text-primary-foreground">
+                      {classesFilterCount}
+                    </span>
+                  ) : null}
+                </Button>
+                {classesFilterCount > 0 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+                    onClick={clearClassesFilters}
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden />
+                    Clear
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {filtersOpen ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative w-full sm:max-w-xs">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search by class or guide…"
+                    className="h-8 w-full rounded-md border border-border bg-card py-1.5 pl-8 pr-2.5 text-xs outline-none focus:border-primary"
+                  />
+                </div>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-36">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    {filterTypeOptions.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-36">
+                    <SelectValue placeholder="All locations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All locations</SelectItem>
+                    {LOCATIONS.map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={guideFilter} onValueChange={setGuideFilter}>
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-44">
+                    <SelectValue placeholder="All guides" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All guides</SelectItem>
+                    <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
+                    {guideSelectOptions.map((opt) => (
+                      <SelectItem key={opt.key} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-8 w-full text-xs sm:w-36"
+                  aria-label="Date (from)"
+                  title="Single day when used alone; start of range with “To”"
+                />
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-8 w-full text-xs sm:w-36"
+                  aria-label="Date (to)"
+                  title="End of range (optional)"
+                />
+                <Select
+                  value={occupancyFilter}
+                  onValueChange={(v) => setOccupancyFilter(v as "all" | "has_bookings" | "empty")}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs sm:w-40">
+                    <SelectValue placeholder="Bookings" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Any bookings</SelectItem>
+                    <SelectItem value="has_bookings">Has bookings</SelectItem>
+                    <SelectItem value="empty">Empty classes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             ) : null}
           </div>
-        </div>
 
-        {filtersOpen ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by class or guide…"
-                className="h-8 w-full rounded-md border border-border bg-card py-1.5 pl-8 pr-2.5 text-xs outline-none focus:border-primary"
-              />
-            </div>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="h-8 w-full text-xs sm:w-36">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                {filterTypeOptions.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
-                    {t.label}
-                  </SelectItem>
+          <div className={cn(canManage && selected.size > 0 && "pb-28")}>
+            {loading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full rounded-xl" />
                 ))}
-              </SelectContent>
-            </Select>
-            <Select value={locationFilter} onValueChange={setLocationFilter}>
-              <SelectTrigger className="h-8 w-full text-xs sm:w-36">
-                <SelectValue placeholder="All locations" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All locations</SelectItem>
-                {LOCATIONS.map((loc) => (
-                  <SelectItem key={loc} value={loc}>
-                    {loc}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={guideFilter} onValueChange={setGuideFilter}>
-              <SelectTrigger className="h-8 w-full text-xs sm:w-44">
-                <SelectValue placeholder="All guides" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All guides</SelectItem>
-                <SelectItem value={GUIDE_NONE}>No guide assigned</SelectItem>
-                {guideSelectOptions.map((opt) => (
-                  <SelectItem key={opt.key} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-8 w-full text-xs sm:w-36"
-              aria-label="Date (from)"
-              title="Single day when used alone; start of range with “To”"
-            />
-            <Input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-8 w-full text-xs sm:w-36"
-              aria-label="Date (to)"
-              title="End of range (optional)"
-            />
-            <Select
-              value={occupancyFilter}
-              onValueChange={(v) => setOccupancyFilter(v as "all" | "has_bookings" | "empty")}
-            >
-              <SelectTrigger className="h-8 w-full text-xs sm:w-40">
-                <SelectValue placeholder="Bookings" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any bookings</SelectItem>
-                <SelectItem value="has_bookings">Has bookings</SelectItem>
-                <SelectItem value="empty">Empty classes</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        ) : null}
-      </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {daySections.map(({ dayKey, list }) => (
+                  <section key={dayKey} ref={dayKey === todayKey ? todaySectionRef : undefined}>
+                    <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
+                      <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
+                        {masterDayHeaderLabel(dayKey)}
+                        <span className="ml-2 font-sans font-medium normal-case tracking-normal text-muted-foreground">
+                          — {list.length} class{list.length === 1 ? "" : "es"}
+                        </span>
+                      </h2>
+                      {dayKey === todayKey ? (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-[#a3b693]">
+                          Today
+                        </span>
+                      ) : null}
+                    </div>
+                    {list.length === 0 ? (
+                      <p className="px-1 py-1.5 text-xs text-muted-foreground">No classes</p>
+                    ) : (
+                      <ul className="overflow-hidden rounded-xl border border-border bg-card">
+                        {(() => {
+                          // Date-keyed (todayKey), not position — other weeks never match → no line.
+                          const insertAt =
+                            dayKey === todayKey ? nowLineInsertIndex(list, nowMs) : null;
 
-        <div className={cn(canManage && selected.size > 0 && "pb-28")}>
-          {loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded-xl" />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {daySections.map(({ dayKey, list }) => (
-                <section
-                  key={dayKey}
-                  ref={dayKey === todayKey ? todaySectionRef : undefined}
-                >
-                  <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
-                    <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
-                      {masterDayHeaderLabel(dayKey)}
-                      <span className="ml-2 font-sans font-medium normal-case tracking-normal text-muted-foreground">
-                        — {list.length} class{list.length === 1 ? "" : "es"}
-                      </span>
-                    </h2>
-                    {dayKey === todayKey ? (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-[#a3b693]">
-                        Today
-                      </span>
-                    ) : null}
-                  </div>
-                  {list.length === 0 ? (
-                    <p className="px-1 py-1.5 text-xs text-muted-foreground">No classes</p>
-                  ) : (
-                    <ul className="overflow-hidden rounded-xl border border-border bg-card">
-                      {(() => {
-                        // Date-keyed (todayKey), not position — other weeks never match → no line.
-                        const insertAt =
-                          dayKey === todayKey ? nowLineInsertIndex(list, nowMs) : null;
+                          return list.map((c, i) => {
+                            const badgeType = displayClassType(classTypeSlugFor(c) ?? c.class_type);
+                            const title = classTitle(c);
+                            const typeTheme = classTypeTheme(badgeType);
+                            const isSelected = selected.has(c.id);
+                            const greyRow = dayKey === todayKey && isClassEnded(c, nowMs);
+                            const guideValue = guideSelectValueForClass(c);
+                            const savingThis = savingGuideClassId === c.id;
+                            const savedFlash = savedGuideFlashId === c.id;
 
-                        return list.map((c, i) => {
-                          const badgeType = displayClassType(classTypeSlugFor(c) ?? c.class_type);
-                          const title = classTitle(c);
-                          const typeTheme = classTypeTheme(badgeType);
-                          const isSelected = selected.has(c.id);
-                          const greyRow = dayKey === todayKey && isClassEnded(c, nowMs);
-                          const guideValue = guideSelectValueForClass(c);
-                          const savingThis = savingGuideClassId === c.id;
-                          const savedFlash = savedGuideFlashId === c.id;
-
-                          return (
-                            <Fragment key={c.id}>
-                              {insertAt === i ? (
-                                <MasterNowLine ref={nowAnchorRef} nowMs={nowMs} />
-                              ) : null}
-                              <li className="border-b border-border last:border-b-0">
-                                <div
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={() => void openEdit(c)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      void openEdit(c);
-                                    }
-                                  }}
-                                  className={cn(
-                                    "flex cursor-pointer items-stretch border-l-4 transition hover:bg-muted/40",
-                                    typeTheme.tint,
-                                    isSelected && "bg-[#e8efe3]/40",
-                                    greyRow && "opacity-55",
-                                  )}
-                                  style={{
-                                    borderLeftColor: typeTheme.accent,
-                                    backgroundColor: typeTheme.tintBg || undefined,
-                                  }}
-                                >
-                                  {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
-                                  <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
-                                    {formatTime(c.starts_at)}
-                                    <span className="text-muted-foreground">–</span>
-                                    {formatTime(c.ends_at)}
-                                  </span>
-                                  <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
-                                    {canManage ? (
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onCheckedChange={() => toggleSelected(c.id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
-                                        aria-label={`Select ${title}`}
-                                      />
-                                    ) : null}
-                                    <div className="min-w-0 flex-1">
-                                      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                        <p className="truncate font-display text-sm font-semibold text-foreground">
-                                          {title}
-                                        </p>
-                                        <TypeBadge type={badgeType} size="sm" className="shrink-0" />
-                                      </div>
-                                      <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
-                                        <MapPin className="h-3 w-3 shrink-0" aria-hidden />
-                                        {c.location?.trim() || "—"}
-                                      </p>
-                                    </div>
-                                    <div
-                                      className="flex w-[10.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
-                                      onClick={(e) => e.stopPropagation()}
-                                      onKeyDown={(e) => e.stopPropagation()}
-                                    >
-                                      <Select
-                                        value={guideValue}
-                                        onValueChange={(v) => void saveInlineGuide(c, v)}
-                                        disabled={!canManage || savingThis}
-                                      >
-                                        <SelectTrigger
-                                          className={cn(
-                                            // Override SelectTrigger’s default [&>span]:line-clamp-1 —
-                                            // it was clipping “Unguided” so the final “d” read as “a”.
-                                            "h-8 gap-1 px-2 text-xs [&>span]:line-clamp-none [&>span]:overflow-visible [&>span]:whitespace-nowrap",
-                                            guideValue === "none" && "text-muted-foreground italic",
-                                          )}
-                                          aria-label={`Guide for ${title}`}
-                                          title={
-                                            guideValue === "none"
-                                              ? "Unguided"
-                                              : guideSelectOptions.find((o) => o.value === guideValue)
-                                                  ?.label
-                                          }
-                                        >
-                                          <SelectValue placeholder="Unguided" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="none">Unguided</SelectItem>
-                                          {guideSelectOptions.map((opt) => (
-                                            <SelectItem key={opt.key} value={opt.value}>
-                                              {opt.label}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                      {savingThis ? (
-                                        <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                          <Loader2 className="h-3 w-3 animate-spin" /> Saving…
-                                        </span>
-                                      ) : savedFlash ? (
-                                        <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
-                                          <Check className="h-3 w-3" /> Saved
-                                        </span>
+                            return (
+                              <Fragment key={c.id}>
+                                {insertAt === i ? (
+                                  <MasterNowLine ref={nowAnchorRef} nowMs={nowMs} />
+                                ) : null}
+                                <li className="border-b border-border last:border-b-0">
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => void openEdit(c)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        void openEdit(c);
+                                      }
+                                    }}
+                                    className={cn(
+                                      "flex cursor-pointer items-stretch border-l-4 transition hover:bg-muted/40",
+                                      typeTheme.tint,
+                                      isSelected && "bg-[#e8efe3]/40",
+                                      greyRow && "opacity-55",
+                                    )}
+                                    style={{
+                                      borderLeftColor: typeTheme.accent,
+                                      backgroundColor: typeTheme.tintBg || undefined,
+                                    }}
+                                  >
+                                    {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
+                                    <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
+                                      {formatTime(c.starts_at)}
+                                      <span className="text-muted-foreground">–</span>
+                                      {formatTime(c.ends_at)}
+                                    </span>
+                                    <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
+                                      {canManage ? (
+                                        <Checkbox
+                                          checked={isSelected}
+                                          onCheckedChange={() => toggleSelected(c.id)}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
+                                          aria-label={`Select ${title}`}
+                                        />
                                       ) : null}
-                                    </div>
-                                    {canManage ? (
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                          <p className="truncate font-display text-sm font-semibold text-foreground">
+                                            {title}
+                                          </p>
+                                          <TypeBadge
+                                            type={badgeType}
+                                            size="sm"
+                                            className="shrink-0"
+                                          />
+                                        </div>
+                                        <p className="flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground">
+                                          <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+                                          {c.location?.trim() || "—"}
+                                        </p>
+                                      </div>
                                       <div
-                                        className="flex shrink-0 flex-col gap-0.5"
+                                        className="flex w-[10.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
                                         onClick={(e) => e.stopPropagation()}
                                         onKeyDown={(e) => e.stopPropagation()}
                                       >
-                                        {(["bookings_closed", "waitlist_closed"] as const).map((f) => (
-                                          <button
-                                            key={f}
-                                            type="button"
-                                            onClick={() => void toggleClosed(c, f)}
-                                            title={
-                                              f === "bookings_closed"
-                                                ? c.bookings_closed
-                                                  ? "Bookings closed. Tap to open"
-                                                  : "Bookings open. Tap to close"
-                                                : c.waitlist_closed
-                                                  ? "Waitlist closed. Tap to open"
-                                                  : "Waitlist open. Tap to close"
-                                            }
+                                        <Select
+                                          value={guideValue}
+                                          onValueChange={(v) => void saveInlineGuide(c, v)}
+                                          disabled={!canManage || savingThis}
+                                        >
+                                          <SelectTrigger
                                             className={cn(
-                                              "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-                                              c[f]
-                                                ? "border-destructive/40 bg-destructive/10 text-destructive"
-                                                : "border-border bg-card text-muted-foreground",
+                                              // Override SelectTrigger’s default [&>span]:line-clamp-1 —
+                                              // it was clipping “Unguided” so the final “d” read as “a”.
+                                              "h-8 gap-1 px-2 text-xs [&>span]:line-clamp-none [&>span]:overflow-visible [&>span]:whitespace-nowrap",
+                                              guideValue === "none" &&
+                                                "text-muted-foreground italic",
                                             )}
+                                            aria-label={`Guide for ${title}`}
+                                            title={
+                                              guideValue === "none"
+                                                ? "Unguided"
+                                                : guideSelectOptions.find(
+                                                    (o) => o.value === guideValue,
+                                                  )?.label
+                                            }
                                           >
-                                            {c[f] ? <Lock className="h-2.5 w-2.5" aria-hidden /> : null}
-                                            {f === "bookings_closed" ? "Book" : "Wait"}
-                                            {c[f] ? " closed" : " open"}
-                                          </button>
-                                        ))}
+                                            <SelectValue placeholder="Unguided" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="none">Unguided</SelectItem>
+                                            {guideSelectOptions.map((opt) => (
+                                              <SelectItem key={opt.key} value={opt.value}>
+                                                {opt.label}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                        {savingThis ? (
+                                          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                            <Loader2 className="h-3 w-3 animate-spin" /> Saving…
+                                          </span>
+                                        ) : savedFlash ? (
+                                          <span className="flex items-center gap-1 text-[10px] font-medium text-[#5a7a4a]">
+                                            <Check className="h-3 w-3" /> Saved
+                                          </span>
+                                        ) : null}
                                       </div>
-                                    ) : null}
-                                    <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
-                                      {c.booked_count ?? 0}/{c.capacity}
-                                    </span>
+                                      {canManage ? (
+                                        <div
+                                          className="flex shrink-0 flex-col gap-0.5"
+                                          onClick={(e) => e.stopPropagation()}
+                                          onKeyDown={(e) => e.stopPropagation()}
+                                        >
+                                          {(["bookings_closed", "waitlist_closed"] as const).map(
+                                            (f) => (
+                                              <button
+                                                key={f}
+                                                type="button"
+                                                onClick={() => void toggleClosed(c, f)}
+                                                title={
+                                                  f === "bookings_closed"
+                                                    ? c.bookings_closed
+                                                      ? "Bookings closed. Tap to open"
+                                                      : "Bookings open. Tap to close"
+                                                    : c.waitlist_closed
+                                                      ? "Waitlist closed. Tap to open"
+                                                      : "Waitlist open. Tap to close"
+                                                }
+                                                className={cn(
+                                                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                                                  c[f]
+                                                    ? "border-destructive/40 bg-destructive/10 text-destructive"
+                                                    : "border-border bg-card text-muted-foreground",
+                                                )}
+                                              >
+                                                {c[f] ? (
+                                                  <Lock className="h-2.5 w-2.5" aria-hidden />
+                                                ) : null}
+                                                {f === "bookings_closed" ? "Book" : "Wait"}
+                                                {c[f] ? " closed" : " open"}
+                                              </button>
+                                            ),
+                                          )}
+                                          {c.class_type !== "wellzone" &&
+                                          c.class_type !== "sauna_journey" ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void toggleClosed(c, "comp_wellzone")}
+                                              title={
+                                                c.comp_wellzone
+                                                  ? "Free Wellzone after class is on. Tap to switch off"
+                                                  : "Tap to give a free Wellzone straight after this class"
+                                              }
+                                              className={cn(
+                                                "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                                                c.comp_wellzone
+                                                  ? "border-[#5f7a52] bg-[#5f7a52] text-white"
+                                                  : "border-border bg-card text-muted-foreground",
+                                              )}
+                                            >
+                                              + Wellzone {c.comp_wellzone ? "on" : "off"}
+                                            </button>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                      <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                                        {c.booked_count ?? 0}/{c.capacity}
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
-                              </li>
-                              {insertAt === list.length && i === list.length - 1 ? (
-                                <MasterNowLine ref={nowAnchorRef} nowMs={nowMs} />
-                              ) : null}
-                            </Fragment>
-                          );
-                        });
-                      })()}
-                    </ul>
-                  )}
-                </section>
-              ))}
-            </div>
-          )}
-        </div>
-
-      {canManage && selected.size > 0 ? (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <div className="pointer-events-auto flex w-full max-w-lg flex-col gap-3 rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/95 px-4 py-3 shadow-lg backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm font-medium text-[#3d4f36]">
-              {selected.size} class{selected.size === 1 ? "" : "es"} selected
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => openBulkReassign()}>
-                Reassign guide
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="border-destructive/40 text-destructive hover:bg-destructive/10"
-                onClick={() => setBulkCancelOpen(true)}
-              >
-                Cancel selected
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={clearSelected}>
-                <X className="h-4 w-4" /> Clear
-              </Button>
-            </div>
+                                </li>
+                                {insertAt === list.length && i === list.length - 1 ? (
+                                  <MasterNowLine ref={nowAnchorRef} nowMs={nowMs} />
+                                ) : null}
+                              </Fragment>
+                            );
+                          });
+                        })()}
+                      </ul>
+                    )}
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ) : null}
-      </>
+
+          {canManage && selected.size > 0 ? (
+            <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <div className="pointer-events-auto flex w-full max-w-lg flex-col gap-3 rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/95 px-4 py-3 shadow-lg backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-medium text-[#3d4f36]">
+                  {selected.size} class{selected.size === 1 ? "" : "es"} selected
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openBulkReassign()}
+                  >
+                    Reassign guide
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-destructive/40 text-destructive hover:bg-destructive/10"
+                    onClick={() => setBulkCancelOpen(true)}
+                  >
+                    Cancel selected
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={clearSelected}>
+                    <X className="h-4 w-4" /> Clear
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
 
       <Dialog
@@ -2391,9 +2441,9 @@ function SchedulePage() {
               </RadioGroup>
               {editScope === "future" ? (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Guide, class, free, capacity and description apply to every future class. A
-                  new time or day moves them all by the same amount, and a new end time sets
-                  the duration for all of them.
+                  Guide, class, free, capacity and description apply to every future class. A new
+                  time or day moves them all by the same amount, and a new end time sets the
+                  duration for all of them.
                 </p>
               ) : null}
             </div>
@@ -2438,335 +2488,342 @@ function SchedulePage() {
               </div>
             </div>
           ) : (
-          <div className="grid gap-3 py-2">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label>Class</Label>
-                <Select
-                  value={typeSelection}
-                  onValueChange={(v) => {
-                    setTypeSelection(v);
-                    // Each class has a home room (Master → Class types); still changeable below.
-                    const room = v.startsWith("type:") ? typeById.get(v.slice(5))?.default_location : null;
-                    if (room) setLocation(room);
-                  }}
-                  disabled={!canManage}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pick a class type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Types come from `class_types`, so one created in the Class types tab
-                        is schedulable immediately. The category-only entry keeps historical
-                        rows saveable without inventing a type for them. */}
-                    {typeGroups.map(({ category, types }) => (
-                      <Fragment key={category.id}>
-                        <SelectItem value={`cat:${category.id}`}>
-                          {category.name} — no specific type
-                        </SelectItem>
-                        {types.map((t) => (
-                          <SelectItem key={t.id} value={`type:${t.id}`}>
-                            {category.name}: {t.name}
-                          </SelectItem>
-                        ))}
-                      </Fragment>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Location</Label>
-                <Select value={location} onValueChange={setLocation} disabled={!canManage}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LOCATIONS.map((loc) => (
-                      <SelectItem key={loc} value={loc}>
-                        {loc}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="cls-title-override">Title</Label>
-              <Input
-                id="cls-title-override"
-                value={titleOverride}
-                onChange={(e) => setTitleOverride(e.target.value)}
-                disabled={!canManage}
-                placeholder={derivedTitle || "Pick a type first"}
-              />
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Leave blank to follow the class type — renaming{" "}
-                <span className="font-medium text-foreground">
-                  {selectedTypeRow?.name ?? "the type"}
-                </span>{" "}
-                then retitles this class automatically. Fill it in only for one-offs like
-                “Full Moon Sauna”.
-              </p>
-            </div>
-            {selectedTypeIsGuided ? (
-            <div>
-              <Label>Guide</Label>
-              <Select
-                value={
-                  !guideId ||
-                  guideId === GUIDE_NONE ||
-                  guideId === GUIDE_DIALOG_NONE ||
-                  guideId === "none"
-                    ? "none"
-                    : guideId
-                }
-                onValueChange={handleEditGuideChange}
-                disabled={!canManage}
-              >
-                <SelectTrigger>
-                  <SelectValue
-                    placeholder={
-                      !guideId ||
-                      guideId === GUIDE_NONE ||
-                      guideId === GUIDE_DIALOG_NONE ||
-                      guideId === "none"
-                        ? "No guide"
-                        : undefined
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No guide</SelectItem>
-                  {guideOptions
-                    .filter((g) => Boolean(g.guide_id?.trim()))
-                    .map((g) => (
-                      <SelectItem key={g.guide_id} value={g.guide_id}>
-                        {g.label}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            ) : (
-              <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  {selectedTypeRow?.name ?? "This type"}
-                </span>{" "}
-                is unguided, so no guide is assigned. Turn “Has a guide” on for the type in
-                Class types if that changes.
-              </p>
-            )}
-            <div>
-              <Label htmlFor="cls-date">Date (SAST)</Label>
-              <Input
-                id="cls-date"
-                type="date"
-                value={dateStr}
-                onChange={(e) => setDateStr(e.target.value)}
-                disabled={!canManage}
-              />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="cls-start">Starts</Label>
-                <Input
-                  id="cls-start"
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setStartTime(next);
-                    if (!endTimeTouchedRef.current) {
-                      setEndTime(addMinutesToTimeInput(next, 60));
-                    }
-                  }}
-                  disabled={!canManage}
-                />
-              </div>
-              <div>
-                <Label htmlFor="cls-end">Ends</Label>
-                <Input
-                  id="cls-end"
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => {
-                    endTimeTouchedRef.current = true;
-                    setEndTime(e.target.value);
-                  }}
-                  disabled={!canManage}
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="cls-cap">Capacity</Label>
-              <Input
-                id="cls-cap"
-                type="number"
-                min={1}
-                value={capacity}
-                onChange={(e) => setCapacity(e.target.value)}
-                disabled={!canManage}
-              />
-            </div>
-            <label
-              htmlFor="cls-free"
-              className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5",
-                isFree ? "border-[#a3b693] bg-[#e8efe3]/50" : "border-border",
-              )}
-            >
-              <Checkbox
-                id="cls-free"
-                className="mt-0.5"
-                checked={isFree}
-                onCheckedChange={(c) => setIsFree(c === true)}
-                disabled={!canManage}
-              />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">Free / complimentary class</span>
-                <span className="block text-xs text-muted-foreground">
-                  Members book with no credit and no payment. Shows as FREE on the schedule.
-                </span>
-              </span>
-            </label>
-            {selectedCategorySlug === "event" ? (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-                <div className="min-w-0">
-                  <Label htmlFor="cls-credit-covered" className="cursor-pointer">
-                    Covered by credits
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    On means members can book with a package. Combine with a ticket price
-                    below and members use credits while non-members pay.
-                  </p>
-                </div>
-                <Switch
-                  id="cls-credit-covered"
-                  checked={creditCovered}
-                  onCheckedChange={setCreditCovered}
-                  disabled={!canManage}
-                />
-              </div>
-            ) : null}
-            {dialogMode === "create" || dialogMode === "edit" ? (
-              <div>
-                <Label htmlFor="cls-ticket-price">Ticket price (ZAR)</Label>
-                <Input
-                  id="cls-ticket-price"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={ticketPriceZar}
-                  onChange={(e) => setTicketPriceZar(e.target.value)}
-                  disabled={!canManage}
-                  placeholder="Leave blank for normal class packs"
-                />
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Set a price to create a one-off ticket product (use{" "}
-                  <span className="font-medium text-foreground">0</span> for a free
-                  ticketed event). Leave blank for regular schedule classes paid with
-                  member credits.
-                </p>
-              </div>
-            ) : null}
-            <div>
-              <Label htmlFor="cls-desc">Description</Label>
-              <Textarea
-                id="cls-desc"
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                disabled={!canManage}
-                placeholder="Optional — shown on schedule and booking"
-              />
-            </div>
-            {dialogMode === "create" ? (
-              <>
-                <div className="grid gap-1.5">
-                  <Label>Repeat</Label>
+            <div className="grid gap-3 py-2">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>Class</Label>
                   <Select
-                    value={repeatMode}
-                    onValueChange={(v) => setRepeatMode(v as "none" | "weekly")}
+                    value={typeSelection}
+                    onValueChange={(v) => {
+                      setTypeSelection(v);
+                      // Each class has a home room (Master → Class types); still changeable below.
+                      const room = v.startsWith("type:")
+                        ? typeById.get(v.slice(5))?.default_location
+                        : null;
+                      if (room) setLocation(room);
+                    }}
                     disabled={!canManage}
                   >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pick a class type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {/* Types come from `class_types`, so one created in the Class types tab
+                        is schedulable immediately. The category-only entry keeps historical
+                        rows saveable without inventing a type for them. */}
+                      {typeGroups.map(({ category, types }) => (
+                        <Fragment key={category.id}>
+                          <SelectItem value={`cat:${category.id}`}>
+                            {category.name} — no specific type
+                          </SelectItem>
+                          {types.map((t) => (
+                            <SelectItem key={t.id} value={`type:${t.id}`}>
+                              {category.name}: {t.name}
+                            </SelectItem>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Location</Label>
+                  <Select value={location} onValueChange={setLocation} disabled={!canManage}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      <SelectItem value="weekly">Weekly</SelectItem>
+                      {LOCATIONS.map((loc) => (
+                        <SelectItem key={loc} value={loc}>
+                          {loc}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {repeatMode === "weekly" ? (
-                  <div className="space-y-3">
-                    <div className="grid gap-1.5">
-                      <Label>Ends</Label>
-                      <RadioGroup
-                        value={repeatEndMode}
-                        onValueChange={(v) => setRepeatEndMode(v as "weeks" | "date")}
-                        className="flex gap-4"
-                      >
-                        <div className="flex items-center gap-2">
-                          <RadioGroupItem value="weeks" id="cls-repeat-by-weeks" />
-                          <Label htmlFor="cls-repeat-by-weeks" className="cursor-pointer font-normal">
-                            After a number of weeks
-                          </Label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <RadioGroupItem value="date" id="cls-repeat-by-date" />
-                          <Label htmlFor="cls-repeat-by-date" className="cursor-pointer font-normal">
-                            On a date
-                          </Label>
-                        </div>
-                      </RadioGroup>
-                    </div>
-                    {repeatEndMode === "weeks" ? (
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="cls-repeat-weeks">Number of weeks</Label>
-                        <Input
-                          id="cls-repeat-weeks"
-                          type="number"
-                          min={1}
-                          max={52}
-                          value={repeatWeeks}
-                          onChange={(e) => setRepeatWeeks(e.target.value)}
-                          disabled={!canManage}
-                        />
-                      </div>
-                    ) : (
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="cls-repeat-until">Last class on</Label>
-                        <Input
-                          id="cls-repeat-until"
-                          type="date"
-                          min={dateStr}
-                          value={repeatUntil}
-                          onChange={(e) => setRepeatUntil(e.target.value)}
-                          disabled={!canManage}
-                        />
-                        <p className="text-xs text-muted-foreground">Up to 52 weeks.</p>
-                      </div>
-                    )}
-                    {weeklyPreview.length > 0 ? (
-                      <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          Preview ({weeklyPreview.length} classes)
-                        </p>
-                        <ul className="max-h-36 space-y-1 overflow-y-auto text-sm">
-                          {weeklyPreview.map((row, i) => (
-                            <li key={row.startsAt} className="text-foreground">
-                              {i + 1}. {row.label}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : null}
+              </div>
+              <div>
+                <Label htmlFor="cls-title-override">Title</Label>
+                <Input
+                  id="cls-title-override"
+                  value={titleOverride}
+                  onChange={(e) => setTitleOverride(e.target.value)}
+                  disabled={!canManage}
+                  placeholder={derivedTitle || "Pick a type first"}
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Leave blank to follow the class type — renaming{" "}
+                  <span className="font-medium text-foreground">
+                    {selectedTypeRow?.name ?? "the type"}
+                  </span>{" "}
+                  then retitles this class automatically. Fill it in only for one-offs like “Full
+                  Moon Sauna”.
+                </p>
+              </div>
+              {selectedTypeIsGuided ? (
+                <div>
+                  <Label>Guide</Label>
+                  <Select
+                    value={
+                      !guideId ||
+                      guideId === GUIDE_NONE ||
+                      guideId === GUIDE_DIALOG_NONE ||
+                      guideId === "none"
+                        ? "none"
+                        : guideId
+                    }
+                    onValueChange={handleEditGuideChange}
+                    disabled={!canManage}
+                  >
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          !guideId ||
+                          guideId === GUIDE_NONE ||
+                          guideId === GUIDE_DIALOG_NONE ||
+                          guideId === "none"
+                            ? "No guide"
+                            : undefined
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No guide</SelectItem>
+                      {guideOptions
+                        .filter((g) => Boolean(g.guide_id?.trim()))
+                        .map((g) => (
+                          <SelectItem key={g.guide_id} value={g.guide_id}>
+                            {g.label}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <p className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">
+                    {selectedTypeRow?.name ?? "This type"}
+                  </span>{" "}
+                  is unguided, so no guide is assigned. Turn “Has a guide” on for the type in Class
+                  types if that changes.
+                </p>
+              )}
+              <div>
+                <Label htmlFor="cls-date">Date (SAST)</Label>
+                <Input
+                  id="cls-date"
+                  type="date"
+                  value={dateStr}
+                  onChange={(e) => setDateStr(e.target.value)}
+                  disabled={!canManage}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="cls-start">Starts</Label>
+                  <Input
+                    id="cls-start"
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setStartTime(next);
+                      if (!endTimeTouchedRef.current) {
+                        setEndTime(addMinutesToTimeInput(next, 60));
+                      }
+                    }}
+                    disabled={!canManage}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="cls-end">Ends</Label>
+                  <Input
+                    id="cls-end"
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => {
+                      endTimeTouchedRef.current = true;
+                      setEndTime(e.target.value);
+                    }}
+                    disabled={!canManage}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="cls-cap">Capacity</Label>
+                <Input
+                  id="cls-cap"
+                  type="number"
+                  min={1}
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value)}
+                  disabled={!canManage}
+                />
+              </div>
+              <label
+                htmlFor="cls-free"
+                className={cn(
+                  "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5",
+                  isFree ? "border-[#a3b693] bg-[#e8efe3]/50" : "border-border",
+                )}
+              >
+                <Checkbox
+                  id="cls-free"
+                  className="mt-0.5"
+                  checked={isFree}
+                  onCheckedChange={(c) => setIsFree(c === true)}
+                  disabled={!canManage}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">Free / complimentary class</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Members book with no credit and no payment. Shows as FREE on the schedule.
+                  </span>
+                </span>
+              </label>
+              {selectedCategorySlug === "event" ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
+                  <div className="min-w-0">
+                    <Label htmlFor="cls-credit-covered" className="cursor-pointer">
+                      Covered by credits
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      On means members can book with a package. Combine with a ticket price below
+                      and members use credits while non-members pay.
+                    </p>
                   </div>
-                ) : null}
-              </>
-            ) : null}
-          </div>
+                  <Switch
+                    id="cls-credit-covered"
+                    checked={creditCovered}
+                    onCheckedChange={setCreditCovered}
+                    disabled={!canManage}
+                  />
+                </div>
+              ) : null}
+              {dialogMode === "create" || dialogMode === "edit" ? (
+                <div>
+                  <Label htmlFor="cls-ticket-price">Ticket price (ZAR)</Label>
+                  <Input
+                    id="cls-ticket-price"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={ticketPriceZar}
+                    onChange={(e) => setTicketPriceZar(e.target.value)}
+                    disabled={!canManage}
+                    placeholder="Leave blank for normal class packs"
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Set a price to create a one-off ticket product (use{" "}
+                    <span className="font-medium text-foreground">0</span> for a free ticketed
+                    event). Leave blank for regular schedule classes paid with member credits.
+                  </p>
+                </div>
+              ) : null}
+              <div>
+                <Label htmlFor="cls-desc">Description</Label>
+                <Textarea
+                  id="cls-desc"
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={!canManage}
+                  placeholder="Optional — shown on schedule and booking"
+                />
+              </div>
+              {dialogMode === "create" ? (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label>Repeat</Label>
+                    <Select
+                      value={repeatMode}
+                      onValueChange={(v) => setRepeatMode(v as "none" | "weekly")}
+                      disabled={!canManage}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        <SelectItem value="weekly">Weekly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {repeatMode === "weekly" ? (
+                    <div className="space-y-3">
+                      <div className="grid gap-1.5">
+                        <Label>Ends</Label>
+                        <RadioGroup
+                          value={repeatEndMode}
+                          onValueChange={(v) => setRepeatEndMode(v as "weeks" | "date")}
+                          className="flex gap-4"
+                        >
+                          <div className="flex items-center gap-2">
+                            <RadioGroupItem value="weeks" id="cls-repeat-by-weeks" />
+                            <Label
+                              htmlFor="cls-repeat-by-weeks"
+                              className="cursor-pointer font-normal"
+                            >
+                              After a number of weeks
+                            </Label>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <RadioGroupItem value="date" id="cls-repeat-by-date" />
+                            <Label
+                              htmlFor="cls-repeat-by-date"
+                              className="cursor-pointer font-normal"
+                            >
+                              On a date
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                      {repeatEndMode === "weeks" ? (
+                        <div className="grid gap-1.5">
+                          <Label htmlFor="cls-repeat-weeks">Number of weeks</Label>
+                          <Input
+                            id="cls-repeat-weeks"
+                            type="number"
+                            min={1}
+                            max={52}
+                            value={repeatWeeks}
+                            onChange={(e) => setRepeatWeeks(e.target.value)}
+                            disabled={!canManage}
+                          />
+                        </div>
+                      ) : (
+                        <div className="grid gap-1.5">
+                          <Label htmlFor="cls-repeat-until">Last class on</Label>
+                          <Input
+                            id="cls-repeat-until"
+                            type="date"
+                            min={dateStr}
+                            value={repeatUntil}
+                            onChange={(e) => setRepeatUntil(e.target.value)}
+                            disabled={!canManage}
+                          />
+                          <p className="text-xs text-muted-foreground">Up to 52 weeks.</p>
+                        </div>
+                      )}
+                      {weeklyPreview.length > 0 ? (
+                        <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-2.5">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Preview ({weeklyPreview.length} classes)
+                          </p>
+                          <ul className="max-h-36 space-y-1 overflow-y-auto text-sm">
+                            {weeklyPreview.map((row, i) => (
+                              <li key={row.startsAt} className="text-foreground">
+                                {i + 1}. {row.label}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
           )}
           {canManage ? (
             <DialogFooter className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
@@ -2788,36 +2845,36 @@ function SchedulePage() {
               ) : (
                 <>
                   {editingId ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
-                  onClick={() => {
-                    const cur = rows.find((r) => r.id === editingId);
-                    if (!cur) return;
-                    setCancelScope("single");
-                    setCancelRangeFrom(jhbDayKey(cur.starts_at));
-                    setCancelRangeTo(jhbDayKey(cur.starts_at));
-                    setDeleteFromDialog(cur);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" /> Delete
-                </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+                      onClick={() => {
+                        const cur = rows.find((r) => r.id === editingId);
+                        if (!cur) return;
+                        setCancelScope("single");
+                        setCancelRangeFrom(jhbDayKey(cur.starts_at));
+                        setCancelRangeTo(jhbDayKey(cur.starts_at));
+                        setDeleteFromDialog(cur);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" /> Delete
+                    </Button>
                   ) : null}
                   <div className="flex gap-2 sm:ml-auto">
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void saveClass()}
-                  className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-                >
-                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {editingId ? "Save changes" : "Create class"}
-                </Button>
-              </div>
+                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void saveClass()}
+                      className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+                    >
+                      {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      {editingId ? "Save changes" : "Create class"}
+                    </Button>
+                  </div>
                 </>
               )}
             </DialogFooter>
@@ -2825,14 +2882,18 @@ function SchedulePage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={changePlan !== null} onOpenChange={(o) => !o && !sendingAlerts && setChangePlan(null)}>
+      <Dialog
+        open={changePlan !== null}
+        onOpenChange={(o) => !o && !sendingAlerts && setChangePlan(null)}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Tell booked members about the change?</DialogTitle>
             <DialogDescription>
-              {changePlan?.people ?? 0} member{(changePlan?.people ?? 0) === 1 ? " is" : "s are"} booked into{" "}
-              {changePlan?.items.length ?? 0} class{(changePlan?.items.length ?? 0) === 1 ? "" : "es"} that
-              changed. They&apos;ll get a message in the app and an email.
+              {changePlan?.people ?? 0} member{(changePlan?.people ?? 0) === 1 ? " is" : "s are"}{" "}
+              booked into {changePlan?.items.length ?? 0} class
+              {(changePlan?.items.length ?? 0) === 1 ? "" : "es"} that changed. They&apos;ll get a
+              message in the app and an email.
             </DialogDescription>
           </DialogHeader>
           {changePlan?.items[0] ? (
@@ -2888,8 +2949,8 @@ function SchedulePage() {
           <DialogHeader>
             <DialogTitle>How should this time be loaded?</DialogTitle>
             <DialogDescription>
-              {startTime} to {endTime} in {location}. Load it as one long session, or split it
-              into shorter sessions.
+              {startTime} to {endTime} in {location}. Load it as one long session, or split it into
+              shorter sessions.
             </DialogDescription>
           </DialogHeader>
           <RadioGroup
@@ -2988,13 +3049,18 @@ function SchedulePage() {
             </p>
           ) : singleClash ? (
             <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
-              Not available: {singleClash.title} is in {location} on{" "}
-              {formatClashTime(singleClash)}. Choose several sessions to see which times are free.
+              Not available: {singleClash.title} is in {location} on {formatClashTime(singleClash)}.
+              Choose several sessions to see which times are free.
             </p>
           ) : null}
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" disabled={saving} onClick={() => setSplitOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => setSplitOpen(false)}
+            >
               Back
             </Button>
             <Button
@@ -3017,7 +3083,9 @@ function SchedulePage() {
                   ]);
                 } else {
                   void createClasses(
-                    splitSlots.filter((x) => x.picked && !x.clash).map((x) => ({ start: x.start, end: x.end })),
+                    splitSlots
+                      .filter((x) => x.picked && !x.clash)
+                      .map((x) => ({ start: x.start, end: x.end })),
                   );
                 }
               }}
@@ -3192,7 +3260,6 @@ function SchedulePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
