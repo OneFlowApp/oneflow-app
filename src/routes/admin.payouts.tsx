@@ -95,6 +95,13 @@ function classifyRole(role: string | null | undefined): Role {
   return "other";
 }
 
+/** Submitted after the 27th of the month the pay cycle ends in. */
+function isLateInvoice(i: { submitted_at: string; period_end: string | null }): boolean {
+  if (!i.period_end || !i.submitted_at) return false;
+  const due = new Date(`${i.period_end.slice(0, 8)}27T23:59:59+02:00`).getTime();
+  return new Date(i.submitted_at).getTime() > due;
+}
+
 function formatRand(n: number): string {
   const x = Number(n) || 0;
   return `R${x.toLocaleString("en-ZA", { maximumFractionDigits: 0, minimumFractionDigits: 0 })}`;
@@ -133,7 +140,7 @@ function PayoutsPage() {
   const [meName, setMeName] = useState<string>("");
 
   // Director side
-  const [tab, setTab] = useState<string>("inbox");
+  const [tab, setTab] = useState<string>("submitted");
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [q, setQ] = useState("");
@@ -153,37 +160,52 @@ function PayoutsPage() {
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
-  /** Which month the guide is invoicing (early in the month, last month is the default). */
-  const [period, setPeriod] = useState<"last_month" | "this_month">(() =>
-    Number(
-      new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }).slice(8, 10),
-    ) <= 10
-      ? "last_month"
-      : "this_month",
-  );
+  /**
+   * Pay cycle: the 26th of one month to the 25th of the next. Invoices are due by the 27th.
+   * "current" is the cycle ending this month's 25th (or next month's, from the 28th);
+   * "previous" is the one before.
+   */
+  const [period, setPeriod] = useState<"current" | "previous">("current");
   const periodRange = useMemo(() => {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
     let y = Number(today.slice(0, 4));
     let m = Number(today.slice(5, 7));
-    if (period === "last_month") {
-      m -= 1;
-      if (m === 0) {
-        m = 12;
-        y -= 1;
+    const day = Number(today.slice(8, 10));
+    if (day >= 28) m += 1;
+    if (period === "previous") m -= 1;
+    const norm = (yy: number, mm: number) => {
+      while (mm > 12) {
+        mm -= 12;
+        yy += 1;
       }
-    }
-    const start = `${y}-${String(m).padStart(2, "0")}-01`;
-    const nextY = m === 12 ? y + 1 : y;
-    const nextM = m === 12 ? 1 : m + 1;
-    const nextStart = `${nextY}-${String(nextM).padStart(2, "0")}-01`;
-    const endDay = new Date(new Date(`${nextStart}T12:00:00Z`).getTime() - 86_400_000)
-      .toISOString()
-      .slice(0, 10);
-    const label = new Date(`${start}T12:00:00Z`).toLocaleDateString("en-ZA", {
-      month: "long",
-      year: "numeric",
-    });
-    return { start, end: endDay, nextStart, label };
+      while (mm < 1) {
+        mm += 12;
+        yy -= 1;
+      }
+      return [yy, mm] as const;
+    };
+    [y, m] = norm(y, m);
+    const [py, pm] = norm(y, m - 1);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const start = `${py}-${pad(pm)}-26`;
+    const end = `${y}-${pad(m)}-25`;
+    const nextStart = `${y}-${pad(m)}-26`;
+    const due = `${y}-${pad(m)}-27`;
+    const fmt = (d: string) =>
+      new Date(`${d}T12:00:00Z`).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+    return {
+      start,
+      end,
+      nextStart,
+      due,
+      label: `${fmt(start)} – ${fmt(end)}`,
+      dueLabel: new Date(`${due}T12:00:00Z`).toLocaleDateString("en-ZA", {
+        day: "numeric",
+        month: "long",
+      }),
+      overdue: today > due,
+      open: today <= end,
+    };
   }, [period]);
 
   useEffect(() => {
@@ -529,7 +551,7 @@ function PayoutsPage() {
       <div>
         <PageHeader
           title="Submit invoice"
-          description={`Hi ${meName}, add your rate for each class you taught in ${periodRange.label}.`}
+          description={`Hi ${meName}, add your rate for each class you taught ${periodRange.label}. Due by ${periodRange.dueLabel}.`}
           actions={
             <Button
               type="button"
@@ -548,7 +570,7 @@ function PayoutsPage() {
         />
 
         <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice month">
-          {(["last_month", "this_month"] as const).map((p) => (
+          {(["previous", "current"] as const).map((p) => (
             <button
               key={p}
               type="button"
@@ -561,10 +583,24 @@ function PayoutsPage() {
                   : "rounded-full border border-border bg-card px-4 py-1.5 text-sm font-semibold"
               }
             >
-              {p === "last_month" ? "Last month" : "This month"}
+              {p === "previous" ? "Previous cycle" : "This cycle"}
             </button>
           ))}
         </div>
+        <p
+          className={
+            periodRange.overdue
+              ? "mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              : "mb-4 rounded-xl border border-[#d4af37]/50 bg-[#d4af37]/10 px-3 py-2 text-sm"
+          }
+        >
+          {periodRange.label} ·{" "}
+          {periodRange.overdue
+            ? `Was due by ${periodRange.dueLabel}. Submit as soon as you can.`
+            : periodRange.open
+              ? `This cycle is still running. Submit on the 26th or 27th, by ${periodRange.dueLabel}.`
+              : `Submit by ${periodRange.dueLabel}.`}
+        </p>
 
         {loadingClasses ? (
           <div className="space-y-3">
@@ -659,8 +695,28 @@ function PayoutsPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-4">
+          <TabsTrigger value="submitted">
+            Submitted ({invoices.filter((i) => i.status === "pending").length})
+          </TabsTrigger>
           <TabsTrigger value="inbox">All invoices</TabsTrigger>
         </TabsList>
+        <TabsContent value="submitted" className="mt-0">
+          <p className="mb-3 text-sm text-muted-foreground">
+            Invoices guides have submitted that are waiting for approval. Pay cycle: 26th to 25th,
+            due by the 27th.
+            <span className="font-medium text-destructive"> Late</span> means submitted after the
+            27th.
+          </p>
+          <InvoicesList
+            loading={loadingInvoices}
+            rows={invoices.filter((i) => i.status === "pending")}
+            isAdmin={isAdmin}
+            showLate
+            onOpen={(inv) => setDetail(inv)}
+            onApprove={(inv) => void setStatus(inv, "approved")}
+            onMarkPaid={(inv) => void setStatus(inv, "paid")}
+          />
+        </TabsContent>
         <TabsContent value="inbox" className="mt-0">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground">
@@ -809,10 +865,12 @@ function InvoicesList({
   onOpen,
   onApprove,
   onMarkPaid,
+  showLate = false,
 }: {
   loading: boolean;
   rows: InvoiceRow[];
   isAdmin: boolean;
+  showLate?: boolean;
   onOpen: (inv: InvoiceRow) => void;
   onApprove?: (inv: InvoiceRow) => void;
   onMarkPaid?: (inv: InvoiceRow) => void;
@@ -862,7 +920,14 @@ function InvoicesList({
               }}
               className="cursor-pointer border-t border-border hover:bg-muted/30"
             >
-              <td className="px-5 py-3 font-semibold">{i.guideName}</td>
+              <td className="px-5 py-3 font-semibold">
+                {i.guideName}
+                {showLate && isLateInvoice(i) ? (
+                  <span className="ml-2 rounded-full bg-destructive/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-destructive">
+                    Late
+                  </span>
+                ) : null}
+              </td>
               <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">
                 {formatDate(i.submitted_at)}
               </td>
