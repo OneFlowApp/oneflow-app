@@ -153,6 +153,38 @@ function PayoutsPage() {
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
+  /** Which month the guide is invoicing (early in the month, last month is the default). */
+  const [period, setPeriod] = useState<"last_month" | "this_month">(() =>
+    Number(
+      new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" }).slice(8, 10),
+    ) <= 10
+      ? "last_month"
+      : "this_month",
+  );
+  const periodRange = useMemo(() => {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+    let y = Number(today.slice(0, 4));
+    let m = Number(today.slice(5, 7));
+    if (period === "last_month") {
+      m -= 1;
+      if (m === 0) {
+        m = 12;
+        y -= 1;
+      }
+    }
+    const start = `${y}-${String(m).padStart(2, "0")}-01`;
+    const nextY = m === 12 ? y + 1 : y;
+    const nextM = m === 12 ? 1 : m + 1;
+    const nextStart = `${nextY}-${String(nextM).padStart(2, "0")}-01`;
+    const endDay = new Date(new Date(`${nextStart}T12:00:00Z`).getTime() - 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const label = new Date(`${start}T12:00:00Z`).toLocaleDateString("en-ZA", {
+      month: "long",
+      year: "numeric",
+    });
+    return { start, end: endDay, nextStart, label };
+  }, [period]);
 
   useEffect(() => {
     void (async () => {
@@ -170,10 +202,21 @@ function PayoutsPage() {
         first_name?: string;
         last_name?: string;
       } | null;
+      // Directors see every invoice. Anyone else who teaches (even with another role) sees their own.
+      const roleSet = new Set(
+        [rec?.role, ...(rec?.secondary_roles ?? [])].map((x) => String(x ?? "").toLowerCase()),
+      );
       setRole(
-        classifyRole(
-          effectiveRole({ role: rec?.role ?? null, secondary_roles: rec?.secondary_roles ?? null }),
-        ),
+        roleSet.has("director")
+          ? "director"
+          : roleSet.has("guide")
+            ? "guide"
+            : classifyRole(
+                effectiveRole({
+                  role: rec?.role ?? null,
+                  secondary_roles: rec?.secondary_roles ?? null,
+                }),
+              ),
       );
       setMeName(`${rec?.first_name ?? ""} ${rec?.last_name ?? ""}`.trim() || "Guide");
     })();
@@ -237,13 +280,15 @@ function PayoutsPage() {
   const loadGuideClasses = useCallback(async () => {
     if (!me) return;
     setLoadingClasses(true);
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
+    const fromIso = new Date(`${periodRange.start}T00:00:00+02:00`).toISOString();
+    const toIso = new Date(
+      Math.min(new Date(`${periodRange.nextStart}T00:00:00+02:00`).getTime(), Date.now()),
+    ).toISOString();
     const { data: classRows, error } = await supabase
       .from("classes")
       .select("id, name, class_type, starts_at, location, capacity, booked_count, guide_id")
-      .gte("starts_at", since.toISOString())
-      .lte("starts_at", new Date().toISOString())
+      .gte("starts_at", fromIso)
+      .lt("starts_at", toIso)
       .eq("is_cancelled", false)
       .or(`guide_id.eq.${me},guide_name.ilike.${meName}`)
       .order("starts_at", { ascending: false });
@@ -257,6 +302,18 @@ function PayoutsPage() {
           .in("class_id", ids)
       : { data: [] };
     const leftIds = new Set(((leftRows ?? []) as { class_id: string }[]).map((r) => r.class_id));
+    // Classes already on one of their invoices (not rejected) can't be invoiced twice.
+    const { data: myInvoices } = await supabase
+      .from("guide_invoices")
+      .select("line_items, status")
+      .eq("guide_id", me);
+    for (const inv of (myInvoices ?? []) as {
+      line_items: LineItem[] | null;
+      status: string | null;
+    }[]) {
+      if (inv.status === "rejected") continue;
+      for (const li of inv.line_items ?? []) if (li.class_id) leftIds.add(li.class_id);
+    }
     setLoadingClasses(false);
     if (error) {
       console.error(error);
@@ -279,7 +336,7 @@ function PayoutsPage() {
     const initialRates: Record<string, string> = {};
     for (const it of items) initialRates[it.class_id ?? ""] = "";
     setRates(initialRates);
-  }, [me, meName]);
+  }, [me, meName, periodRange]);
 
   useEffect(() => {
     if (isGuide) void loadGuideClasses();
@@ -317,9 +374,8 @@ function PayoutsPage() {
         return;
       }
       const total = lineItems.reduce((s, it) => s + it.rate_zar, 0);
-      const periodEnd = new Date();
-      const periodStart = new Date();
-      periodStart.setDate(periodStart.getDate() - 30);
+      const periodStart = new Date(`${periodRange.start}T12:00:00Z`);
+      const periodEnd = new Date(`${periodRange.end}T12:00:00Z`);
       const { data: inserted, error } = await supabase
         .from("guide_invoices")
         .insert({
@@ -473,7 +529,7 @@ function PayoutsPage() {
       <div>
         <PageHeader
           title="Submit invoice"
-          description={`Hi ${meName}, log the rate for each class you taught in the last 30 days.`}
+          description={`Hi ${meName}, add your rate for each class you taught in ${periodRange.label}.`}
           actions={
             <Button
               type="button"
@@ -491,6 +547,25 @@ function PayoutsPage() {
           }
         />
 
+        <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice month">
+          {(["last_month", "this_month"] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              role="tab"
+              aria-selected={period === p}
+              onClick={() => setPeriod(p)}
+              className={
+                period === p
+                  ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-4 py-1.5 text-sm font-semibold text-white"
+                  : "rounded-full border border-border bg-card px-4 py-1.5 text-sm font-semibold"
+              }
+            >
+              {p === "last_month" ? "Last month" : "This month"}
+            </button>
+          ))}
+        </div>
+
         {loadingClasses ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -500,7 +575,10 @@ function PayoutsPage() {
         ) : guideClasses.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
             <CircleDollarSign className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-            <p className="text-sm text-muted-foreground">No classes taught in the last 30 days.</p>
+            <p className="text-sm text-muted-foreground">
+              No classes to invoice for {periodRange.label}. Classes already on an invoice
+              aren&apos;t listed again.
+            </p>
           </div>
         ) : (
           <div className="space-y-6">

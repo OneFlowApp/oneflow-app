@@ -74,7 +74,7 @@ const PAGES: Record<StaffRole, readonly AdminArea[]> = {
   management: except("payouts", "transactions"),
   marketing: except("schedule", "payouts", "transactions", "reviews", "empty-classes"),
   front_desk: ["check-in", "bookings"],
-  guide: ["check-in", "bookings"],
+  guide: ["check-in", "bookings", "payouts"],
   boh: ["bookings"],
 };
 
@@ -84,7 +84,7 @@ const EDIT: Record<StaffRole, readonly AdminArea[]> = {
   management: except("payouts", "transactions"),
   marketing: ["email", "client-comms", "promotions"],
   front_desk: ["check-in", "bookings"],
-  guide: ["check-in"],
+  guide: ["check-in", "payouts"],
   boh: [],
 };
 
