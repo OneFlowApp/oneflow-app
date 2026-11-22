@@ -444,6 +444,8 @@ function SchedulePage() {
   const [creditCovered, setCreditCovered] = useState(true);
   /** "Free class": members book with no credit or payment. */
   const [isFree, setIsFree] = useState(false);
+  /** Free Wellzone straight after this class (Mat and Reformer only). */
+  const [compWellzone, setCompWellzone] = useState(false);
   const [location, setLocation] = useState<string>(DEFAULT_STUDIO_ROOM);
   const [guideId, setGuideId] = useState<string>(GUIDE_DIALOG_NONE);
   const [dateStr, setDateStr] = useState(toDateInputValue(new Date()));
@@ -955,6 +957,7 @@ function SchedulePage() {
     setTitleOverride("");
     setCreditCovered(true);
     setIsFree(false);
+    setCompWellzone(false);
     setLocation(DEFAULT_STUDIO_ROOM);
     setGuideId(GUIDE_DIALOG_NONE);
     setDateStr(toDateInputValue(new Date()));
@@ -1165,6 +1168,7 @@ function SchedulePage() {
     setTitleOverride(c.title_override ?? "");
     setCreditCovered(c.credit_covered !== false);
     setIsFree(c.is_free === true);
+    setCompWellzone(c.comp_wellzone === true);
     setLocation(c.location || DEFAULT_STUDIO_ROOM);
     const s = new Date(c.starts_at);
     const e = new Date(c.ends_at);
@@ -1245,6 +1249,7 @@ function SchedulePage() {
       title_override: titleOverride.trim() ? titleOverride.trim() : null,
       credit_covered: creditCovered,
       is_free: isFree,
+      comp_wellzone: compWellzone && classType !== "wellzone" && classType !== "sauna_journey",
       location,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
@@ -1342,6 +1347,7 @@ function SchedulePage() {
           title_override: base.title_override,
           credit_covered: base.credit_covered,
           is_free: base.is_free,
+          comp_wellzone: base.comp_wellzone,
           location: base.location,
           capacity: base.capacity,
           description: base.description,
@@ -1539,6 +1545,7 @@ function SchedulePage() {
       title_override: titleOverride.trim() ? titleOverride.trim() : null,
       credit_covered: creditCovered,
       is_free: isFree,
+      comp_wellzone: compWellzone && classType !== "wellzone" && classType !== "sauna_journey",
       location,
       starts_at: start.toISOString(),
       ends_at: end.toISOString(),
@@ -2681,6 +2688,29 @@ function SchedulePage() {
                   </span>
                 </span>
               </label>
+              {classType !== "wellzone" && classType !== "sauna_journey" ? (
+                <label
+                  htmlFor="cls-comp-wellzone"
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5",
+                    compWellzone ? "border-[#a3b693] bg-[#e8efe3]/50" : "border-border",
+                  )}
+                >
+                  <Checkbox
+                    id="cls-comp-wellzone"
+                    className="mt-0.5"
+                    checked={compWellzone}
+                    onCheckedChange={(c) => setCompWellzone(c === true)}
+                    disabled={!canManage}
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">+ Complimentary Wellzone</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Members checked in get a free Wellzone session straight after this class.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
               {selectedCategorySlug === "event" ? (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
                   <div className="min-w-0">
