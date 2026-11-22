@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MapPin, Clock, ChevronLeft, ChevronRight } from "lucide-react";
+import { MapPin, Clock, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { BookingSheet } from "@/components/BookingSheet";
@@ -856,8 +856,9 @@ function ScheduleRow({
         <span className="tabular-nums">{durationMin} mins</span>
       </p>
       {(session as { comp_wellzone?: boolean | null }).comp_wellzone ? (
-        <p className="mt-1.5 inline-flex rounded-full bg-[#5f7a52]/10 px-2 py-0.5 text-[11px] font-semibold text-[#5f7a52]">
-          + Free Wellzone straight after class
+        <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-[#d4af37] px-2.5 py-1 text-[11px] font-bold text-[#2b2205] shadow-sm ring-1 ring-[#f3dc8a]">
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+          Free Wellzone straight after class
         </p>
       ) : null}
 
