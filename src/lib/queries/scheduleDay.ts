@@ -30,7 +30,7 @@ export async function fetchScheduleDayClasses(
   const { data, error } = await supabase
     .from("classes")
     .select(
-      "id, name, title_override, guide_name, class_type, class_type_id, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id, is_free, bookings_closed, waitlist_closed",
+      "id, name, title_override, guide_name, class_type, class_type_id, location, starts_at, ends_at, capacity, booked_count, is_cancelled, description, product_id, is_free, bookings_closed, waitlist_closed, comp_wellzone",
     )
     .gte("starts_at", startUtcIso)
     .lte("starts_at", endUtcIso)

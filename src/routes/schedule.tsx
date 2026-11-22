@@ -9,10 +9,7 @@ import { useAuth } from "@/contexts/auth";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
 import { useTimezone } from "@/hooks/use-timezone";
-import {
-  confirmedBookingIntervalsFromRows,
-  useMemberBookings,
-} from "@/lib/queries/memberBookings";
+import { confirmedBookingIntervalsFromRows, useMemberBookings } from "@/lib/queries/memberBookings";
 import { useMemberWaitlist } from "@/lib/queries/memberWaitlist";
 import { invalidateMemberBookingCaches } from "@/lib/queries/invalidate";
 import { useScheduleDayClasses } from "@/lib/queries/scheduleDay";
@@ -100,7 +97,9 @@ function readSavedFilters(): ScheduleFilterState {
     return {
       types: Array.isArray(v.types) ? v.types.map(String) : [],
       times: Array.isArray(v.times)
-        ? (v.times.filter((x) => x === "morning" || x === "afternoon" || x === "evening") as TimeOfDay[])
+        ? (v.times.filter(
+            (x) => x === "morning" || x === "afternoon" || x === "evening",
+          ) as TimeOfDay[])
         : [],
       guides: Array.isArray(v.guides) ? v.guides.map(String) : [],
     };
@@ -113,7 +112,9 @@ function timeOfDayFor(iso: string, tz: string): TimeOfDay {
   let hour = new Date(iso).getHours();
   try {
     hour = Number(
-      new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(new Date(iso)),
+      new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(
+        new Date(iso),
+      ),
     );
   } catch {
     /* fall back to device time */
@@ -178,8 +179,7 @@ function useHorizontalDaySwipe(onPrev: () => void, onNext: () => void) {
         if (Math.abs(dx) < 12 && Math.abs(dy) < 12) return;
         // Diagonal / mostly-vertical gestures stay vertical so the page doesn't
         // "scroll" sideways while the user is trying to move down the list.
-        locked =
-          Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO ? "h" : "v";
+        locked = Math.abs(dx) > Math.abs(dy) * SWIPE_AXIS_RATIO ? "h" : "v";
       }
       if (locked === "h") e.preventDefault();
     };
@@ -315,11 +315,7 @@ export default function SchedulePage() {
     setClasses(mapped);
     setLoading(dayClassesQuery.isLoading && !dayClassesQuery.data);
     setRevalidating(dayClassesQuery.isFetching && !dayClassesQuery.isLoading);
-  }, [
-    dayClassesQuery.data,
-    dayClassesQuery.isLoading,
-    dayClassesQuery.isFetching,
-  ]);
+  }, [dayClassesQuery.data, dayClassesQuery.isLoading, dayClassesQuery.isFetching]);
 
   useEffect(() => {
     const intervals = confirmedBookingIntervalsFromRows(memberBookingsQuery.data ?? []);
@@ -462,9 +458,11 @@ export default function SchedulePage() {
         .lt("starts_at", until.toISOString())
         .not("guide_name", "is", null)
         .limit(3000);
-      return [...new Set(((data ?? []) as { guide_name: string | null }[]).map((r) => r.guide_name?.trim() ?? ""))].filter(
-        Boolean,
-      );
+      return [
+        ...new Set(
+          ((data ?? []) as { guide_name: string | null }[]).map((r) => r.guide_name?.trim() ?? ""),
+        ),
+      ].filter(Boolean);
     },
     staleTime: 10 * 60_000,
   });
@@ -484,8 +482,10 @@ export default function SchedulePage() {
     return allDayClasses.filter(
       (c) =>
         (filters.types.length === 0 || filters.types.includes(typeLabelFor(c))) &&
-        (filters.times.length === 0 || filters.times.includes(timeOfDayFor(c.starts_at, studioTimeZone))) &&
-        (filters.guides.length === 0 || (c.guide_name != null && filters.guides.includes(c.guide_name.trim()))),
+        (filters.times.length === 0 ||
+          filters.times.includes(timeOfDayFor(c.starts_at, studioTimeZone))) &&
+        (filters.guides.length === 0 ||
+          (c.guide_name != null && filters.guides.includes(c.guide_name.trim()))),
     );
   }, [allDayClasses, filters, typeLabelFor, studioTimeZone]);
 
@@ -526,10 +526,7 @@ export default function SchedulePage() {
       const stickyH = sticky?.getBoundingClientRect().height ?? 0;
       const gap = 10;
       const delta =
-        target.getBoundingClientRect().top -
-        scroller.getBoundingClientRect().top -
-        stickyH -
-        gap;
+        target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - stickyH - gap;
       scroller.scrollBy({ top: delta, behavior: "smooth" });
     };
 
@@ -596,9 +593,7 @@ export default function SchedulePage() {
                 const dayIsPast = isPastScheduleDay(dayKey, studioTimeZone);
                 return {
                   key: dayKey,
-                  weekdayLetter: weekdayStripLetter(
-                    weekdayIndexSundayZero(dayKey, studioTimeZone),
-                  ),
+                  weekdayLetter: weekdayStripLetter(weekdayIndexSundayZero(dayKey, studioTimeZone)),
                   dayOfMonth: dayOfMonthFromDateKey(dayKey),
                   selected,
                   isToday: dayKey === todayKey,
@@ -628,92 +623,91 @@ export default function SchedulePage() {
           </div>
         </div>
 
-      <main
-        className={cn(
-          "flex-1 space-y-3 px-4 pt-3 pb-4 transition-opacity",
-          revalidating && "opacity-80",
-        )}
-      >
-        <div
-          key={selectedDateKey}
+        <main
           className={cn(
-            "min-w-0 space-y-3 overflow-x-hidden",
-            !loading &&
-              (daySlide === "from-left"
-                ? "schedule-slide-from-left"
-                : daySlide === "from-right"
-                  ? "schedule-slide-from-right"
-                  : "schedule-content-animate"),
+            "flex-1 space-y-3 px-4 pt-3 pb-4 transition-opacity",
+            revalidating && "opacity-80",
           )}
         >
-          {!loading && allDayClasses.length > 0 ? (
-            <ScheduleFilters
-              value={filters}
-              onChange={setFilters}
-              typeOptions={typeOptions}
-              guideOptions={guideOptions}
-              shown={filteredClasses.length}
-              total={allDayClasses.length}
-            />
-          ) : null}
-          {loading ? (
-            <ScheduleRowsSkeleton />
-          ) : allDayClasses.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-              <p>No classes scheduled for this day.</p>
-            </div>
-          ) : filteredClasses.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
-              <p>No classes match your filters on this day.</p>
-              <button
-                type="button"
-                onClick={() => setFilters(EMPTY_SCHEDULE_FILTERS)}
-                className="mt-2 text-xs font-semibold text-[#4a6b3c] underline-offset-2 hover:underline"
-              >
-                Clear filters
-              </button>
-            </div>
-          ) : (
-            <div ref={classListRef} className="space-y-3">
-              {filteredClasses.map((c, idx) => {
-                const classIsPast =
-                  selectedDayIsPast || isPastScheduleClass(c.starts_at, nowMs);
-                const overlapBooking = findOverlappingBooking(c, bookedIntervals, c.id);
-                return (
-                  <div key={c.id}>
-                    {timeLineIndex === idx ? (
-                      <div data-schedule-now-line className="mb-3">
-                        <CurrentTimeLine />
+          <div
+            key={selectedDateKey}
+            className={cn(
+              "min-w-0 space-y-3 overflow-x-hidden",
+              !loading &&
+                (daySlide === "from-left"
+                  ? "schedule-slide-from-left"
+                  : daySlide === "from-right"
+                    ? "schedule-slide-from-right"
+                    : "schedule-content-animate"),
+            )}
+          >
+            {!loading && allDayClasses.length > 0 ? (
+              <ScheduleFilters
+                value={filters}
+                onChange={setFilters}
+                typeOptions={typeOptions}
+                guideOptions={guideOptions}
+                shown={filteredClasses.length}
+                total={allDayClasses.length}
+              />
+            ) : null}
+            {loading ? (
+              <ScheduleRowsSkeleton />
+            ) : allDayClasses.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+                <p>No classes scheduled for this day.</p>
+              </div>
+            ) : filteredClasses.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card/50 p-6 text-center text-sm text-muted-foreground">
+                <p>No classes match your filters on this day.</p>
+                <button
+                  type="button"
+                  onClick={() => setFilters(EMPTY_SCHEDULE_FILTERS)}
+                  className="mt-2 text-xs font-semibold text-[#4a6b3c] underline-offset-2 hover:underline"
+                >
+                  Clear filters
+                </button>
+              </div>
+            ) : (
+              <div ref={classListRef} className="space-y-3">
+                {filteredClasses.map((c, idx) => {
+                  const classIsPast = selectedDayIsPast || isPastScheduleClass(c.starts_at, nowMs);
+                  const overlapBooking = findOverlappingBooking(c, bookedIntervals, c.id);
+                  return (
+                    <div key={c.id}>
+                      {timeLineIndex === idx ? (
+                        <div data-schedule-now-line className="mb-3">
+                          <CurrentTimeLine />
+                        </div>
+                      ) : null}
+                      <div data-schedule-class-id={c.id}>
+                        <ScheduleRow
+                          session={c}
+                          displayTimeZone={timeZone}
+                          studioTimeZone={studioTimeZone}
+                          alreadyBooked={bookedClassIds.has(c.id)}
+                          onWaitlist={waitlistedClassIds.has(c.id)}
+                          friendsGoing={friendsGoing.get(c.id) ?? []}
+                          overlapBooking={overlapBooking}
+                          isPast={classIsPast}
+                          onReserve={() => {
+                            if (classIsPast || overlapBooking) return;
+                            setBookingFor(c);
+                          }}
+                        />
                       </div>
-                    ) : null}
-                    <div data-schedule-class-id={c.id}>
-                      <ScheduleRow
-                        session={c}
-                        displayTimeZone={timeZone}
-                        studioTimeZone={studioTimeZone}
-                        alreadyBooked={bookedClassIds.has(c.id)}
-                        onWaitlist={waitlistedClassIds.has(c.id)}
-                        friendsGoing={friendsGoing.get(c.id) ?? []}
-                        overlapBooking={overlapBooking}
-                        isPast={classIsPast}
-                        onReserve={() => {
-                          if (classIsPast || overlapBooking) return;
-                          setBookingFor(c);
-                        }}
-                      />
                     </div>
+                  );
+                })}
+                {timeLineIndex === filteredClasses.length ? (
+                  <div data-schedule-now-line>
+                    <CurrentTimeLine />
                   </div>
-                );
-              })}
-              {timeLineIndex === filteredClasses.length ? (
-                <div data-schedule-now-line>
-                  <CurrentTimeLine />
-                </div>
-              ) : null}
-            </div>
-          )}
-        </div>
-      </main>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </main>
       </div>
 
       <BookingSheet
@@ -793,8 +787,17 @@ function ScheduleRow({
   // When full + not booked + no overlap, the button opens the sheet to
   // join the waitlist (or manage an existing entry).
   const canWaitlist =
-    !isPast && !alreadyBooked && full && !hasOverlap && (onWaitlist || (!waitlistClosed && !bookingsClosed));
-  const closedLabel = !isPast && !alreadyBooked && !canReserve && !canWaitlist && (bookingsClosed || (full && waitlistClosed));
+    !isPast &&
+    !alreadyBooked &&
+    full &&
+    !hasOverlap &&
+    (onWaitlist || (!waitlistClosed && !bookingsClosed));
+  const closedLabel =
+    !isPast &&
+    !alreadyBooked &&
+    !canReserve &&
+    !canWaitlist &&
+    (bookingsClosed || (full && waitlistClosed));
   const isFreeClass = session.is_free === true || isFreeBeginnerClass(session.class_type);
 
   return (
@@ -852,6 +855,11 @@ function ScheduleRow({
         </span>
         <span className="tabular-nums">{durationMin} mins</span>
       </p>
+      {(session as { comp_wellzone?: boolean | null }).comp_wellzone ? (
+        <p className="mt-1.5 inline-flex rounded-full bg-[#5f7a52]/10 px-2 py-0.5 text-[11px] font-semibold text-[#5f7a52]">
+          + Free Wellzone straight after class
+        </p>
+      ) : null}
 
       {friendsGoing.length > 0 ? (
         <div className="mt-2 flex items-center gap-2">
@@ -932,15 +940,15 @@ function ScheduleRow({
               ? bookingsClosed
                 ? "Bookings closed"
                 : "Full · waitlist closed"
-            : hasOverlap
-              ? "Time conflict"
-              : full
-                ? onWaitlist
-                  ? "On waitlist"
-                  : "Join Waitlist"
-                : isFreeClass
-                  ? "Book Free"
-                  : "Reserve"}
+              : hasOverlap
+                ? "Time conflict"
+                : full
+                  ? onWaitlist
+                    ? "On waitlist"
+                    : "Join Waitlist"
+                  : isFreeClass
+                    ? "Book Free"
+                    : "Reserve"}
       </button>
     </div>
   );
