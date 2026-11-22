@@ -67,6 +67,8 @@ type LineItem = {
   participants: number;
   capacity: number;
   rate_zar: number;
+  /** Taught for free: listed on the invoice at R0. */
+  free?: boolean;
 };
 
 type InvoiceRow = {
@@ -385,13 +387,15 @@ function PayoutsPage() {
     setSubmitting(true);
     try {
       const lineItems = guideClasses
-        .map((it) => ({
-          ...it,
-          rate_zar: Number(rates[it.class_id ?? ""] || 0),
-        }))
-        .filter((it) => it.rate_zar > 0);
+        .map((it) => {
+          const v = rates[it.class_id ?? ""] ?? "";
+          return v === "free"
+            ? { ...it, rate_zar: 0, free: true }
+            : { ...it, rate_zar: Number(v || 0), free: false };
+        })
+        .filter((it) => it.free || it.rate_zar > 0);
       if (lineItems.length === 0) {
-        toast.error("Add a rate to at least one class");
+        toast.error("Add a rate, or mark Free, for at least one class");
         setSubmitting(false);
         return;
       }
@@ -416,7 +420,7 @@ function PayoutsPage() {
       const breakdown = lineItems
         .map(
           (it) =>
-            `<li>${formatDay(it.starts_at)} — ${it.class_name} (${it.class_type}) — R${it.rate_zar}</li>`,
+            `<li>${formatDay(it.starts_at)} — ${it.class_name} (${it.class_type}) — ${it.free ? "Free" : `R${it.rate_zar}`}</li>`,
         )
         .join("");
       await supabase.functions.invoke("send-email", {
@@ -556,7 +560,7 @@ function PayoutsPage() {
             <Button
               type="button"
               onClick={() => setConfirmSubmitOpen(true)}
-              disabled={submitting || guideTotal <= 0}
+              disabled={submitting || (guideTotal <= 0 && !Object.values(rates).includes("free"))}
               className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
             >
               {submitting ? (
@@ -1024,10 +1028,26 @@ function ClassRateGroup({
                 id={`rate-${it.class_id}`}
                 type="number"
                 min={0}
-                value={rates[it.class_id ?? ""] ?? ""}
+                disabled={rates[it.class_id ?? ""] === "free"}
+                value={rates[it.class_id ?? ""] === "free" ? "" : (rates[it.class_id ?? ""] ?? "")}
+                placeholder={rates[it.class_id ?? ""] === "free" ? "Free" : ""}
                 onChange={(e) => setRate(it.class_id ?? "", e.target.value)}
-                className="w-32 text-right"
+                className="w-28 text-right"
               />
+              <button
+                type="button"
+                onClick={() =>
+                  setRate(it.class_id ?? "", rates[it.class_id ?? ""] === "free" ? "" : "free")
+                }
+                className={
+                  rates[it.class_id ?? ""] === "free"
+                    ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-3 py-1.5 text-xs font-semibold text-white"
+                    : "rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+                }
+                title="I taught this class for free"
+              >
+                Free
+              </button>
             </div>
           </li>
         ))}
@@ -1082,7 +1102,9 @@ function InvoiceDetail({
                     <td className="px-3 py-2 text-right tabular-nums">
                       {li.participants}/{li.capacity}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatRand(li.rate_zar)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {li.free ? "Free" : formatRand(li.rate_zar)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
