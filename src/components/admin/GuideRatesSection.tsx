@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
 
+export type GuideRateRule = Rule;
+
 type Rule = {
   id: string | null;
   guide_profile_id: string;
@@ -29,7 +31,7 @@ const GROUPS: { value: Rule["class_group"]; label: string }[] = [
 
 const groupLabel = (g: Rule["class_group"]) => GROUPS.find((x) => x.value === g)?.label ?? g;
 
-function ruleSummary(r: Rule): string {
+export function ruleSummary(r: Rule): string {
   const att =
     r.max_attendance == null
       ? `${r.min_attendance} or more people`

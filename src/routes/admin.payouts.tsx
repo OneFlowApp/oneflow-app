@@ -47,7 +47,11 @@ import {
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
-import { GuideRatesSection } from "@/components/admin/GuideRatesSection";
+import {
+  GuideRatesSection,
+  ruleSummary,
+  type GuideRateRule,
+} from "@/components/admin/GuideRatesSection";
 
 export const Route = createFileRoute("/admin/payouts")({
   head: () => ({ meta: [{ title: "Payouts — One Flow Admin" }] }),
@@ -90,6 +94,8 @@ type InvoiceRow = {
   approved_at: string | null;
   paid_at: string | null;
   notes: string | null;
+  rates_confirmed?: boolean;
+  rates_comment?: string | null;
 };
 
 type Role = "director" | "management" | "guide" | "other";
@@ -170,6 +176,10 @@ function PayoutsPage() {
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
+  /** The guide's own rates (set by Directors), and their confirmation for this invoice. */
+  const [myRates, setMyRates] = useState<GuideRateRule[]>([]);
+  const [ratesConfirmed, setRatesConfirmed] = useState(false);
+  const [ratesComment, setRatesComment] = useState("");
   /**
    * Pay cycle: the 26th of one month to the 25th of the next. Invoices are due by the 27th.
    * "current" is the cycle ending this month's 25th (or next month's, from the 28th);
@@ -265,7 +275,7 @@ function PayoutsPage() {
     const query = supabase
       .from("guide_invoices")
       .select(
-        "id, guide_id, submitted_at, period_start, period_end, line_items, total_amount, status, approved_at, paid_at, notes, guide:guide_id(first_name, last_name, email)",
+        "id, guide_id, submitted_at, period_start, period_end, line_items, total_amount, status, approved_at, paid_at, notes, rates_confirmed, rates_comment, guide:guide_id(first_name, last_name, email)",
       )
       .order("submitted_at", { ascending: false })
       .limit(500);
@@ -298,6 +308,8 @@ function PayoutsPage() {
         approved_at: (raw.approved_at as string | null) ?? null,
         paid_at: (raw.paid_at as string | null) ?? null,
         notes: (raw.notes as string | null) ?? null,
+        rates_confirmed: raw.rates_confirmed === true,
+        rates_comment: (raw.rates_comment as string | null) ?? null,
       };
     });
     setInvoices(rows);
@@ -381,6 +393,16 @@ function PayoutsPage() {
     if (isGuide || teaches) void loadGuideClasses();
   }, [isGuide, teaches, loadGuideClasses]);
 
+  useEffect(() => {
+    if (!me || !(isGuide || teaches)) return;
+    void supabase
+      .from("guide_rates")
+      .select("*")
+      .eq("guide_profile_id", me)
+      .order("sort_order")
+      .then(({ data }) => setMyRates((data ?? []) as GuideRateRule[]));
+  }, [me, isGuide, teaches]);
+
   const guideSplit = useMemo(() => {
     const studio: LineItem[] = [];
     const wellzone: LineItem[] = [];
@@ -414,6 +436,11 @@ function PayoutsPage() {
         setSubmitting(false);
         return;
       }
+      if (!ratesConfirmed) {
+        toast.error("Please tick to confirm your rates first");
+        setSubmitting(false);
+        return;
+      }
       const total = lineItems.reduce((s, it) => s + it.rate_zar, 0);
       const periodStart = new Date(`${periodRange.start}T12:00:00Z`);
       const periodEnd = new Date(`${periodRange.end}T12:00:00Z`);
@@ -426,6 +453,9 @@ function PayoutsPage() {
           period_start: periodStart.toISOString().slice(0, 10),
           period_end: periodEnd.toISOString().slice(0, 10),
           status: "pending",
+          rates_confirmed: ratesConfirmed,
+          rates_comment: ratesComment.trim() || null,
+          rates_snapshot: myRates,
         })
         .select("id")
         .maybeSingle();
@@ -575,7 +605,11 @@ function PayoutsPage() {
           <Button
             type="button"
             onClick={() => setConfirmSubmitOpen(true)}
-            disabled={submitting || (guideTotal <= 0 && !Object.values(rates).includes("free"))}
+            disabled={
+              submitting ||
+              !ratesConfirmed ||
+              (guideTotal <= 0 && !Object.values(rates).includes("free"))
+            }
             className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
           >
             {submitting ? (
@@ -587,6 +621,46 @@ function PayoutsPage() {
           </Button>
         }
       />
+
+      <section className="mb-4 rounded-2xl border border-border bg-card p-4">
+        <h4 className="font-display text-base font-semibold">Your rates</h4>
+        {myRates.length === 0 ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            No rates have been set for you yet. Add a comment below if you&apos;d like the studio to
+            set them.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1 text-sm">
+            {myRates.map((r) => (
+              <li key={r.id ?? `${r.class_group}-${r.min_attendance}`}>
+                {ruleSummary(r)}
+                {r.note ? <span className="text-muted-foreground"> · {r.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+        <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-[#5f7a52]"
+            checked={ratesConfirmed}
+            onChange={(e) => setRatesConfirmed(e.target.checked)}
+          />
+          <span className="font-medium">
+            {myRates.length === 0
+              ? "I've read this and added a comment if needed"
+              : "I confirm these are my rates"}
+          </span>
+        </label>
+        <textarea
+          value={ratesComment}
+          onChange={(e) => setRatesComment(e.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder="Comment (optional), e.g. my Reformer rate changed in November"
+          className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+      </section>
 
       <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice month">
         {(["previous", "current"] as const).map((p) => (
@@ -1177,6 +1251,16 @@ function InvoiceDetail({
                 </tr>
               </tfoot>
             </table>
+          </div>
+          <div className="rounded-lg border border-border px-3 py-2">
+            <p className="text-sm font-semibold">
+              {inv.rates_confirmed ? "✓ Guide confirmed their rates" : "Rates not confirmed"}
+            </p>
+            {inv.rates_comment ? (
+              <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                “{inv.rates_comment}”
+              </p>
+            ) : null}
           </div>
           {inv.notes && (
             <div>
