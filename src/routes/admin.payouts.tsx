@@ -69,6 +69,10 @@ type LineItem = {
   rate_zar: number;
   /** Taught for free: listed on the invoice at R0. */
   free?: boolean;
+  /** A complimentary (free) class on the schedule. */
+  complimentary?: boolean;
+  /** Nobody booked: whether the guide stayed or left (Empty classes). */
+  empty_outcome?: "stayed" | "left" | null;
 };
 
 type InvoiceRow = {
@@ -124,6 +128,7 @@ function formatDate(iso: string | null): string {
 function formatDay(iso: string): string {
   return new Date(iso).toLocaleDateString("en-ZA", {
     timeZone: TZ,
+    weekday: "short",
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -313,22 +318,26 @@ function PayoutsPage() {
     ).toISOString();
     const { data: classRows, error } = await supabase
       .from("classes")
-      .select("id, name, class_type, starts_at, location, capacity, booked_count, guide_id")
+      .select(
+        "id, name, class_type, starts_at, location, capacity, booked_count, guide_id, is_free",
+      )
       .gte("starts_at", fromIso)
       .lt("starts_at", toIso)
       .eq("is_cancelled", false)
       .or(`guide_id.eq.${me},guide_name.ilike.${meName}`)
       .order("starts_at", { ascending: false });
-    // Empty classes the guide left don't count towards their month-end list.
+    // Empty classes: shown with "Stayed" or "Left"; ones the guide left are greyed out and can't be claimed.
     const ids = (classRows ?? []).map((c: Record<string, unknown>) => String(c.id));
-    const { data: leftRows } = ids.length
-      ? await supabase
-          .from("empty_class_checkins")
-          .select("class_id")
-          .eq("outcome", "left")
-          .in("class_id", ids)
+    const { data: emptyRows } = ids.length
+      ? await supabase.from("empty_class_checkins").select("class_id, outcome").in("class_id", ids)
       : { data: [] };
-    const leftIds = new Set(((leftRows ?? []) as { class_id: string }[]).map((r) => r.class_id));
+    const outcomeById = new Map(
+      ((emptyRows ?? []) as { class_id: string; outcome: "stayed" | "left" }[]).map((r) => [
+        r.class_id,
+        r.outcome,
+      ]),
+    );
+    const leftIds = new Set<string>();
     // Classes already on one of their invoices (not rejected) can't be invoiced twice.
     const { data: myInvoices } = await supabase
       .from("guide_invoices")
@@ -358,6 +367,8 @@ function PayoutsPage() {
         participants: Number(c.booked_count ?? 0),
         capacity: Number(c.capacity ?? 0),
         rate_zar: 0,
+        complimentary: c.is_free === true,
+        empty_outcome: outcomeById.get(String(c.id)) ?? null,
       }));
     setGuideClasses(items);
     const initialRates: Record<string, string> = {};
@@ -396,7 +407,7 @@ function PayoutsPage() {
             ? { ...it, rate_zar: 0, free: true }
             : { ...it, rate_zar: Number(v || 0), free: false };
         })
-        .filter((it) => it.free || it.rate_zar > 0);
+        .filter((it) => it.empty_outcome !== "left" && (it.free || it.rate_zar > 0));
       if (lineItems.length === 0) {
         toast.error("Add a rate, or mark Free, for at least one class");
         setSubmitting(false);
@@ -1016,10 +1027,32 @@ function ClassRateGroup({
         {items.map((it) => (
           <li
             key={it.class_id}
-            className="grid grid-cols-1 items-center gap-3 py-3 sm:grid-cols-[1fr_auto]"
+            className={cn(
+              "grid grid-cols-1 items-center gap-3 py-3 sm:grid-cols-[1fr_auto]",
+              it.empty_outcome === "left" && "opacity-45",
+            )}
           >
             <div className="min-w-0">
-              <p className="truncate font-semibold">{it.class_name}</p>
+              <p className="flex flex-wrap items-center gap-2 font-semibold">
+                <span className="truncate">{it.class_name}</span>
+                {it.complimentary ? (
+                  <span className="rounded-full bg-[#d4af37]/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#8a6d12]">
+                    Complimentary
+                  </span>
+                ) : null}
+                {it.empty_outcome ? (
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                      it.empty_outcome === "left"
+                        ? "bg-destructive/10 text-destructive"
+                        : "bg-[#5f7a52]/15 text-[#3d4f36]",
+                    )}
+                  >
+                    {it.empty_outcome === "left" ? "Left" : "Stayed"}
+                  </span>
+                ) : null}
+              </p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {formatDay(it.starts_at)} ·{" "}
                 {new Date(it.starts_at).toLocaleTimeString("en-ZA", {
@@ -1030,35 +1063,43 @@ function ClassRateGroup({
                 · {it.location ?? "—"} · {it.participants}/{it.capacity} participants
               </p>
             </div>
-            <div className="flex items-center gap-2 sm:justify-end">
-              <Label htmlFor={`rate-${it.class_id}`} className="text-xs text-muted-foreground">
-                Rate (ZAR)
-              </Label>
-              <Input
-                id={`rate-${it.class_id}`}
-                type="number"
-                min={0}
-                disabled={rates[it.class_id ?? ""] === "free"}
-                value={rates[it.class_id ?? ""] === "free" ? "" : (rates[it.class_id ?? ""] ?? "")}
-                placeholder={rates[it.class_id ?? ""] === "free" ? "Free" : ""}
-                onChange={(e) => setRate(it.class_id ?? "", e.target.value)}
-                className="w-28 text-right"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  setRate(it.class_id ?? "", rates[it.class_id ?? ""] === "free" ? "" : "free")
-                }
-                className={
-                  rates[it.class_id ?? ""] === "free"
-                    ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-3 py-1.5 text-xs font-semibold text-white"
-                    : "rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground"
-                }
-                title="I taught this class for free"
-              >
-                Free
-              </button>
-            </div>
+            {it.empty_outcome === "left" ? (
+              <p className="text-xs text-muted-foreground sm:text-right">
+                Nobody came and you left, so this class isn&apos;t paid.
+              </p>
+            ) : (
+              <div className="flex items-center gap-2 sm:justify-end">
+                <Label htmlFor={`rate-${it.class_id}`} className="text-xs text-muted-foreground">
+                  Rate (ZAR)
+                </Label>
+                <Input
+                  id={`rate-${it.class_id}`}
+                  type="number"
+                  min={0}
+                  disabled={rates[it.class_id ?? ""] === "free"}
+                  value={
+                    rates[it.class_id ?? ""] === "free" ? "" : (rates[it.class_id ?? ""] ?? "")
+                  }
+                  placeholder={rates[it.class_id ?? ""] === "free" ? "Free" : ""}
+                  onChange={(e) => setRate(it.class_id ?? "", e.target.value)}
+                  className="w-28 text-right"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRate(it.class_id ?? "", rates[it.class_id ?? ""] === "free" ? "" : "free")
+                  }
+                  className={
+                    rates[it.class_id ?? ""] === "free"
+                      ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-3 py-1.5 text-xs font-semibold text-white"
+                      : "rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+                  }
+                  title="I taught this class for free"
+                >
+                  Free
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ul>
