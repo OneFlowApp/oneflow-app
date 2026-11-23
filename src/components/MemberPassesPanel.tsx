@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { getUser, supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth";
-import { isStaff } from "@/lib/roleAccess";
+import { hasRole, isStaff } from "@/lib/roleAccess";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { formatStudioDateShort } from "@/lib/timezone";
 
@@ -147,8 +147,9 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
   const [pausing, setPausing] = useState<Pass | null>(null);
   const [gifting, setGifting] = useState<Pass | null>(null);
   // Team members (guides and staff) can't gift passes on: theirs are staff passes or staff-priced.
+  // Directors are the exception: one promo pass a month, worth up to R2 000 (checked by the database).
   const { profile } = useAuth();
-  const viewerIsStaff = isStaff(profile);
+  const viewerIsStaff = isStaff(profile) && !hasRole(profile, "director");
 
   const load = useCallback(async () => {
     const user = await getUser();
@@ -268,7 +269,7 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
                 </div>
               ) : null}
               {!viewerIsStaff &&
-                p.giftable &&
+              p.giftable &&
               !p.pause &&
               p.parts.every((x) => x.unlimited || x.remaining >= x.total) ? (
                 <button
