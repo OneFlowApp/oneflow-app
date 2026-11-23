@@ -47,6 +47,17 @@ import {
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
+import { BillToSection, GuideInvoiceDetailsCard } from "@/components/admin/GuideInvoiceDetails";
+import {
+  type BillTo,
+  type GuideInvoiceDetails,
+  EMPTY_DETAILS,
+  invoiceHtml,
+  invoiceNumberFor,
+  loadBillTo,
+  loadGuideDetails,
+  missingDetails,
+} from "@/lib/guideInvoice";
 import {
   GuideRatesSection,
   ruleSummary,
@@ -126,6 +137,9 @@ type InvoiceRow = {
   notes: string | null;
   rates_confirmed?: boolean;
   rates_comment?: string | null;
+  invoice_number?: string | null;
+  guide_details?: GuideInvoiceDetails | null;
+  bill_to?: BillTo | null;
 };
 
 type Role = "director" | "management" | "guide" | "other";
@@ -212,6 +226,9 @@ function PayoutsPage() {
   const [myRates, setMyRates] = useState<GuideRateRule[]>([]);
   const [ratesConfirmed, setRatesConfirmed] = useState(false);
   const [ratesComment, setRatesComment] = useState("");
+  /** The guide's invoicing / banking details, and the studio's "Billed to" details. */
+  const [myDetails, setMyDetails] = useState<GuideInvoiceDetails>(EMPTY_DETAILS);
+  const [billTo, setBillTo] = useState<BillTo | null>(null);
   /**
    * Pay cycle: the 26th of one month to the 25th of the next. Invoices are due by the 27th.
    * "current" is the cycle ending this month's 25th (or next month's, from the 28th);
@@ -307,7 +324,7 @@ function PayoutsPage() {
     const query = supabase
       .from("guide_invoices")
       .select(
-        "id, guide_id, submitted_at, period_start, period_end, line_items, total_amount, status, approved_at, paid_at, notes, rates_confirmed, rates_comment, guide:guide_id(first_name, last_name, email)",
+        "id, guide_id, submitted_at, period_start, period_end, line_items, total_amount, status, approved_at, paid_at, notes, rates_confirmed, rates_comment, invoice_number, guide_details, bill_to, guide:guide_id(first_name, last_name, email)",
       )
       .order("submitted_at", { ascending: false })
       .limit(500);
@@ -432,6 +449,13 @@ function PayoutsPage() {
       .then(({ data }) => setMyRates((data ?? []) as GuideRateRule[]));
   }, [me, isGuide, teaches]);
 
+  useEffect(() => {
+    if (!me || !(isGuide || teaches)) return;
+    void loadGuideDetails(me).then(setMyDetails);
+    void loadBillTo().then(setBillTo);
+  }, [me, isGuide, teaches]);
+  const detailsMissing = missingDetails(myDetails);
+
   // Fill each class's rate from the guide's rate rules. Nothing is ticked until the guide confirms.
   useEffect(() => {
     const next: Record<string, string> = {};
@@ -466,6 +490,39 @@ function PayoutsPage() {
     }, 0);
   }, [guideClasses, rates]);
 
+  /** Email the guide a copy of their invoice, with Longkloof's details as "Billed to". */
+  const [sendingCopy, setSendingCopy] = useState(false);
+  const sendCopy = async (inv: InvoiceRow) => {
+    if (!me) return;
+    setSendingCopy(true);
+    const from = inv.guide_details ?? myDetails;
+    const to = inv.bill_to ?? billTo ?? (await loadBillTo());
+    const number = inv.invoice_number || invoiceNumberFor(inv.id, inv.period_end);
+    const html = invoiceHtml({
+      number,
+      submittedAt: inv.submitted_at,
+      periodStart: inv.period_start,
+      periodEnd: inv.period_end,
+      lines: inv.line_items,
+      total: inv.total_amount,
+      from,
+      billTo: to,
+    });
+    const { error } = await supabase.functions.invoke("send-email", {
+      body: {
+        to_profile_id: me,
+        template: "marketing",
+        data: {
+          subject: `Your One Flow invoice ${number} — ${formatRand(inv.total_amount)}`,
+          body_html: html,
+        },
+      },
+    });
+    setSendingCopy(false);
+    if (error) toast.error("Could not send the copy. Please try again");
+    else toast.success("A copy is on its way to your email");
+  };
+
   const submitGuideInvoice = async () => {
     setSubmitting(true);
     try {
@@ -488,6 +545,11 @@ function PayoutsPage() {
         setSubmitting(false);
         return;
       }
+      if (detailsMissing.length > 0) {
+        toast.error("Please add your invoicing details first");
+        setSubmitting(false);
+        return;
+      }
       if (!allLinesConfirmed) {
         toast.error("Please tick Confirmed on every class first");
         setSubmitting(false);
@@ -499,11 +561,14 @@ function PayoutsPage() {
         return;
       }
       const total = lineItems.reduce((s, it) => s + it.rate_zar, 0);
+      const newId = crypto.randomUUID();
       const periodStart = new Date(`${periodRange.start}T12:00:00Z`);
       const periodEnd = new Date(`${periodRange.end}T12:00:00Z`);
       const { data: inserted, error } = await supabase
         .from("guide_invoices")
         .insert({
+          id: newId,
+          invoice_number: invoiceNumberFor(newId, periodEnd.toISOString().slice(0, 10)),
           guide_id: me,
           line_items: lineItems,
           total_amount: total,
@@ -513,6 +578,8 @@ function PayoutsPage() {
           rates_confirmed: ratesConfirmed,
           rates_comment: ratesComment.trim() || null,
           rates_snapshot: myRates,
+          guide_details: myDetails,
+          bill_to: billTo,
         })
         .select("id")
         .maybeSingle();
@@ -666,6 +733,7 @@ function PayoutsPage() {
               submitting ||
               !ratesConfirmed ||
               !allLinesConfirmed ||
+              detailsMissing.length > 0 ||
               (guideTotal <= 0 && !Object.values(rates).includes("free"))
             }
             className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
@@ -679,6 +747,10 @@ function PayoutsPage() {
           </Button>
         }
       />
+
+      {me ? (
+        <GuideInvoiceDetailsCard profileId={me} details={myDetails} onSaved={setMyDetails} />
+      ) : null}
 
       <section className="mb-4 rounded-2xl border border-border bg-card p-4">
         <h4 className="font-display text-base font-semibold">Your rates</h4>
@@ -836,6 +908,8 @@ function PayoutsPage() {
           isAdmin={false}
           onApprove={() => detail && void setStatus(detail, "approved")}
           onMarkPaid={() => detail && void setStatus(detail, "paid")}
+          onEmailCopy={detail && detail.guide_id === me ? () => void sendCopy(detail) : undefined}
+          sendingCopy={sendingCopy}
         />
       </Dialog>
 
@@ -888,6 +962,7 @@ function PayoutsPage() {
         </TabsList>
         {isAdmin ? (
           <TabsContent value="rates" className="mt-0">
+            <BillToSection />
             <GuideRatesSection />
           </TabsContent>
         ) : null}
@@ -1048,6 +1123,8 @@ function PayoutsPage() {
           isAdmin={isAdmin}
           onApprove={() => detail && void setStatus(detail, "approved")}
           onMarkPaid={() => detail && void setStatus(detail, "paid")}
+          onEmailCopy={detail && detail.guide_id === me ? () => void sendCopy(detail) : undefined}
+          sendingCopy={sendingCopy}
         />
       </Dialog>
     </div>
@@ -1317,11 +1394,15 @@ function InvoiceDetail({
   isAdmin,
   onApprove,
   onMarkPaid,
+  onEmailCopy,
+  sendingCopy,
 }: {
   inv: InvoiceRow | null;
   isAdmin: boolean;
   onApprove: () => void;
   onMarkPaid: () => void;
+  onEmailCopy?: () => void;
+  sendingCopy?: boolean;
 }) {
   return (
     <DialogContent className="max-w-2xl">
@@ -1337,7 +1418,39 @@ function InvoiceDetail({
               {inv.period_end ? formatDay(inv.period_end) : "—"}
             </span>
             <span>Status: {inv.status}</span>
+            {inv.invoice_number ? <span>{inv.invoice_number}</span> : null}
           </div>
+          {onEmailCopy ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onEmailCopy}
+              disabled={sendingCopy}
+              className="gap-2"
+            >
+              {sendingCopy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Email me a copy
+            </Button>
+          ) : null}
+          {isAdmin && inv.guide_details ? (
+            <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs leading-relaxed">
+              <p className="font-semibold">{inv.guide_details.invoice_name}</p>
+              {inv.guide_details.id_or_reg_number ? (
+                <p>ID / Reg: {inv.guide_details.id_or_reg_number}</p>
+              ) : null}
+              {inv.guide_details.vat_number ? <p>VAT: {inv.guide_details.vat_number}</p> : null}
+              <p>
+                {inv.guide_details.bank_name} · {inv.guide_details.account_holder} ·{" "}
+                {inv.guide_details.account_number} · Branch {inv.guide_details.branch_code}
+                {inv.guide_details.account_type ? ` · ${inv.guide_details.account_type}` : ""}
+              </p>
+            </div>
+          ) : null}
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
