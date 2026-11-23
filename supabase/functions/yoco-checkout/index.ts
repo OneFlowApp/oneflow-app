@@ -336,8 +336,59 @@ serve(async (req) => {
       }
     }
 
-    // The invite price is set on the server only; any amount sent by the app is ignored.
-    const zar = Number(Deno.env.get("CLASS_INVITE_AMOUNT_ZAR") ?? "180");
+    // The class must still be open: not cancelled, not started, not closed for bookings, not full.
+    // (Otherwise the payment goes through but the friend can't be booked.)
+    const { data: clsRow } = await supabase
+      .from("classes")
+      .select("starts_at, is_cancelled, bookings_closed, capacity, booked_count, class_type")
+      .eq("id", String((inv as { class_id?: string | null }).class_id ?? ""))
+      .maybeSingle();
+    const cls = clsRow as {
+      starts_at?: string | null;
+      is_cancelled?: boolean | null;
+      bookings_closed?: boolean | null;
+      capacity?: number | null;
+      booked_count?: number | null;
+      class_type?: string | null;
+    } | null;
+    const closedReason = !cls
+      ? "This class can't be found"
+      : cls.is_cancelled
+        ? "This class has been cancelled"
+        : cls.starts_at && new Date(cls.starts_at).getTime() <= Date.now()
+          ? "This class has already started"
+          : cls.bookings_closed
+            ? "Bookings for this class are closed"
+            : cls.capacity != null && Number(cls.booked_count ?? 0) >= Number(cls.capacity)
+              ? "This class is full"
+              : null;
+    if (closedReason) {
+      await supabase.from("class_invites").update({ status: "cancelled" }).eq("id", class_invite_id);
+      return new Response(JSON.stringify({ error: closedReason }), {
+        status: 409,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Price: the full single-class price for this kind of class (the highest active single-class
+    // product that covers it, so intro offers don't count). Falls back to CLASS_INVITE_AMOUNT_ZAR.
+    let zar = Number(Deno.env.get("CLASS_INVITE_AMOUNT_ZAR") ?? "180");
+    if (cls?.class_type) {
+      const { data: singles } = await supabase
+        .from("products")
+        .select("price_zar, credit_count, allowed_class_types, is_active, is_staff_only, is_class_ticket")
+        .eq("is_active", true)
+        .eq("credit_count", 1)
+        .contains("allowed_class_types", [cls.class_type]);
+      const prices = ((singles ?? []) as {
+        price_zar?: number | null;
+        is_staff_only?: boolean | null;
+        is_class_ticket?: boolean | null;
+      }[])
+        .filter((p) => !p.is_staff_only && !p.is_class_ticket && Number(p.price_zar ?? 0) > 0)
+        .map((p) => Number(p.price_zar));
+      if (prices.length) zar = Math.max(...prices);
+    }
     const amountCents = Math.round(zar * 100);
 
     const { data: inviterProfile } = await supabase
