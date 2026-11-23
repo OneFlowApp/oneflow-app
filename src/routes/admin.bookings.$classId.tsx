@@ -4,7 +4,16 @@ import { CustomerProfileSheet } from "@/components/admin/CustomerProfileSheet";
 import { isEarlyCancellation } from "@/lib/earlyCancellation";
 import { bookingPaymentLabel, fetchBookingCredits } from "@/lib/bookingPaymentLabel";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, CircleAlert, Undo2, UserPlus, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  CircleAlert,
+  Footprints,
+  Smartphone,
+  Undo2,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { useAuth } from "@/contexts/auth";
@@ -80,6 +89,8 @@ type BookingRow = {
   lastName: string;
   bookedAt: string;
   unpaid: boolean;
+  /** How they were booked: by the team (walk-in) or themselves in the app. Null for bookings before 19 Nov. */
+  source: "walk_in" | "app" | null;
 };
 
 type RosterSort = "just_booked" | "first_name" | "last_name";
@@ -250,9 +261,28 @@ function BookingClassDetailPage() {
           raw.map((r) => r.credit_id),
         ),
         staffIds.length
-          ? supabase.from("profiles").select("id, first_name").in("id", staffIds)
+          ? supabase
+              .from("profiles")
+              .select("id, first_name, role, secondary_roles")
+              .in("id", staffIds)
           : Promise.resolve({ data: [] as { id: string; first_name: string | null }[] }),
       ]);
+      // Only someone on the team counts as a walk-in loader (a waitlist move-up can carry another member's id).
+      const teamIds = new Set(
+        (
+          (staffRes.data ?? []) as {
+            id: string;
+            role?: string | null;
+            secondary_roles?: string[] | null;
+          }[]
+        )
+          .filter((p) =>
+            [p.role ?? "", ...(p.secondary_roles ?? [])].some(
+              (x) => x && x.toLowerCase() !== "customer",
+            ),
+          )
+          .map((p) => p.id),
+      );
       const staffName = new Map(
         ((staffRes.data ?? []) as { id: string; first_name: string | null }[]).map((p) => [
           p.id,
@@ -290,7 +320,9 @@ function BookingClassDetailPage() {
             ) +
             (() => {
               const by = (r as { booked_by?: string | null }).booked_by;
-              return by && by !== r.profile_id ? ` · added by ${staffName.get(by) ?? "staff"}` : "";
+              return by && by !== r.profile_id && teamIds.has(by)
+                ? ` · added by ${staffName.get(by) ?? "staff"}`
+                : "";
             })(),
           matAddon: Boolean(pid && addonAccess.matProfileIds.has(pid)),
           towelAddon: Boolean(pid && addonAccess.towelProfileIds.has(pid)),
@@ -300,6 +332,11 @@ function BookingClassDetailPage() {
           lastName: ln,
           bookedAt: r.created_at ?? "",
           unpaid: Boolean(r.unpaid),
+          source: (() => {
+            const by = (r as { booked_by?: string | null }).booked_by;
+            if (!by) return null;
+            return by !== r.profile_id && teamIds.has(by) ? "walk_in" : "app";
+          })(),
         });
       }
 
@@ -521,6 +558,23 @@ function BookingClassDetailPage() {
                         ) : (
                           <span className="min-w-0 truncate">{b.memberFull}</span>
                         )}
+                        {b.source === "walk_in" ? (
+                          <span
+                            title="Walk-in: added by the team"
+                            className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                          >
+                            <Footprints className="h-3 w-3" aria-hidden />
+                            Walk-in
+                          </span>
+                        ) : b.source === "app" ? (
+                          <span
+                            title="Booked in the app"
+                            className="inline-flex items-center gap-1 rounded-full bg-[#5f7a52]/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#3d4f36]"
+                          >
+                            <Smartphone className="h-3 w-3" aria-hidden />
+                            App
+                          </span>
+                        ) : null}
                         <RosterAddonPills
                           mat={b.matAddon}
                           towel={b.towelAddon}
