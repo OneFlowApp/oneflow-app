@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { addClassToCalendar } from "@/lib/addToCalendar";
 import { Link } from "@tanstack/react-router";
-import { Clock, MapPin, Users, Sparkles, UserPlus, Loader2 } from "lucide-react";
+import { Clock, MapPin, Users, Sparkles, UserPlus, Loader2, X } from "lucide-react";
+import { GuideCardSheet } from "@/components/GuideCardSheet";
 import { toast } from "sonner";
 import {
   Sheet,
@@ -41,15 +42,8 @@ import {
   isClassDateInChallenge,
   type MovementChallengeConfig,
 } from "@/lib/movementChallenge";
-import {
-  joinWaitlist,
-  leaveWaitlist,
-  type WaitlistEntry,
-} from "@/lib/waitlist";
-import {
-  formatHireAddonPrice,
-  type BookingHireAddon,
-} from "@/lib/bookingAddons";
+import { joinWaitlist, leaveWaitlist, type WaitlistEntry } from "@/lib/waitlist";
+import { formatHireAddonPrice, type BookingHireAddon } from "@/lib/bookingAddons";
 import {
   formatStudioDateLong,
   formatStudioDateOnly,
@@ -113,7 +107,8 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const { user } = useAuth();
   const { data: sheetData } = useBookingSheetData(user?.id, user?.email, session, open);
   // Subscribe so a class-type rename repaints the sheet title.
-  useClassCatalog();
+  const { catalog } = useClassCatalog();
+  const [guideOpen, setGuideOpen] = useState(false);
   const [credits, setCredits] = useState<Credit[]>([]);
   const [selectedCredit, setSelectedCredit] = useState<string | null>(null);
   const [flowPoints, setFlowPoints] = useState(0);
@@ -140,8 +135,9 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
   const [waitlistBusy, setWaitlistBusy] = useState(false);
   const [isFreeClass, setIsFreeClass] = useState(false);
   const [isComplimentaryClass, setIsComplimentaryClass] = useState(false);
-  const [challengeConfig, setChallengeConfig] =
-    useState<MovementChallengeConfig>(DEFAULT_MOVEMENT_CHALLENGE);
+  const [challengeConfig, setChallengeConfig] = useState<MovementChallengeConfig>(
+    DEFAULT_MOVEMENT_CHALLENGE,
+  );
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
   const [classTicketProduct, setClassTicketProduct] = useState<{
     id: string;
@@ -368,19 +364,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       await afterBookingConfirmed(booking.id as string);
       console.info("[BookingSheet] free class booking complete", { bookingId: booking.id });
       toast.success("You're booked! See you on the mat 🌿", {
-      action: {
-        label: "Add to calendar",
-        onClick: () =>
-          addClassToCalendar({
-            id: session.id,
-            title: classTitle(session),
-            startsAt: session.starts_at,
-            endsAt: session.ends_at,
-            location: session.location ?? null,
-            guide: session.guide_name ?? null,
-          }),
-      },
-      duration: 10000,
+        action: {
+          label: "Add to calendar",
+          onClick: () =>
+            addClassToCalendar({
+              id: session.id,
+              title: classTitle(session),
+              startsAt: session.starts_at,
+              endsAt: session.ends_at,
+              location: session.location ?? null,
+              guide: session.guide_name ?? null,
+            }),
+        },
+        duration: 10000,
       });
       setLoading(false);
       onBookingConfirmed?.(session.id);
@@ -656,9 +652,12 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       return;
     }
     const inviteId = (row as { id: string }).id;
-    const { data: finData, error: finErr } = await supabase.functions.invoke("finalize-class-invite", {
-      body: { class_invite_id: inviteId, after_payment: false },
-    });
+    const { data: finData, error: finErr } = await supabase.functions.invoke(
+      "finalize-class-invite",
+      {
+        body: { class_invite_id: inviteId, after_payment: false },
+      },
+    );
     console.info("[BookingSheet] finalize-class-invite result", {
       inviteId,
       error: finErr?.message ?? null,
@@ -831,19 +830,50 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="bottom"
-          className="max-h-[92vh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0"
+          className="max-h-[85dvh] overflow-y-auto rounded-t-3xl border-0 bg-background p-0 pb-[env(safe-area-inset-bottom)] [&>button:first-of-type]:hidden"
         >
-          <div className="px-6 pb-8 pt-6">
+          {/* Our own close button: stays at the top while scrolling and always closes. */}
+          <div className="sticky top-0 z-10 flex justify-end bg-background/95 px-4 pt-3 backdrop-blur">
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-foreground"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="px-6 pb-8">
             <SheetHeader className="text-center">
-              <SheetTitle className="font-display text-2xl font-bold">{classTitle(session)}</SheetTitle>
+              <SheetTitle className="font-display text-2xl font-bold">
+                {classTitle(session)}
+              </SheetTitle>
               <SheetDescription className="text-sm text-muted-foreground">
                 {dateLine} at {timeLine}
               </SheetDescription>
-              {session.description?.trim() ? (
-                <p className="mt-3 text-left text-sm leading-relaxed text-foreground/90">
-                  {session.description.trim()}
-                </p>
+              {session.guide_name?.trim() ? (
+                <button
+                  type="button"
+                  onClick={() => setGuideOpen(true)}
+                  className="mx-auto text-sm font-semibold text-[#5f7a52] underline decoration-dotted underline-offset-2"
+                >
+                  with {session.guide_name.trim()}
+                </button>
               ) : null}
+              {(() => {
+                const own = session.description?.trim();
+                const fromType = session.class_type_id
+                  ? (
+                      catalog.types.find((t) => t.id === session.class_type_id)?.description ?? ""
+                    ).trim()
+                  : "";
+                const text = own || fromType;
+                return text ? (
+                  <p className="mt-3 whitespace-pre-line text-left text-sm leading-relaxed text-foreground/90">
+                    {text}
+                  </p>
+                ) : null;
+              })()}
             </SheetHeader>
 
             <ul className="mt-6 space-y-2.5 text-sm text-muted-foreground">
@@ -907,7 +937,9 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                     <div className="mt-2 space-y-2">
                       {(sheetData?.buyOptions ?? []).map((o) => {
                         const showMember =
-                          o.member_price_zar != null && o.member_price_zar > 0 && o.member_price_zar < o.price_zar;
+                          o.member_price_zar != null &&
+                          o.member_price_zar > 0 &&
+                          o.member_price_zar < o.price_zar;
                         return (
                           <button
                             key={o.id}
@@ -925,14 +957,19 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                               ) : null}
                             </span>
                             <span className="flex shrink-0 items-center gap-2 font-semibold">
-                              {buyingPackId === o.id ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                              {buyingPackId === o.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                              ) : null}
                               {formatTicketPriceLabel(o.price_zar)}
                             </span>
                           </button>
                         );
                       })}
                     </div>
-                    <Link to="/pricing" className="mt-3 block text-center text-xs text-muted-foreground underline">
+                    <Link
+                      to="/pricing"
+                      className="mt-3 block text-center text-xs text-muted-foreground underline"
+                    >
                       See all passes
                     </Link>
                   </>
@@ -980,8 +1017,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                         <p className="text-sm font-semibold">{c.product_name}</p>
                         <p className="text-xs text-muted-foreground">
                           {c.is_unlimited ? "Unlimited" : `${c.credits_remaining} remaining`}
-                          {c.expires_at &&
-                            ` · Expires ${formatStudioDateOnly(c.expires_at)}`}
+                          {c.expires_at && ` · Expires ${formatStudioDateOnly(c.expires_at)}`}
                         </p>
                       </div>
                     </button>
@@ -1019,49 +1055,53 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
               </button>
             )}
 
-            {!isComplimentaryClass && !isFreeClass && !isPaidClassTicket && showHireAddons && (hireAddons.mat || hireAddons.towel) && (
-              <>
-                <p className="mt-6 text-sm font-semibold">Add-ons for this class:</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {hireAddons.mat ? (
-                    <button
-                      key={hireAddons.mat.id}
-                      type="button"
-                      onClick={() => setMatAddon((v) => !v)}
-                      className={cn(
-                        "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                        matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-                      )}
-                    >
-                      🧘 {hireAddons.mat.name}
-                      {formatHireAddonPrice(hireAddons.mat.price_zar) ? (
-                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                          {formatHireAddonPrice(hireAddons.mat.price_zar)}
-                        </span>
-                      ) : null}
-                    </button>
-                  ) : null}
-                  {hireAddons.towel ? (
-                    <button
-                      key={hireAddons.towel.id}
-                      type="button"
-                      onClick={() => setTowelAddon((v) => !v)}
-                      className={cn(
-                        "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
-                        towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
-                      )}
-                    >
-                      🏷️ {hireAddons.towel.name}
-                      {formatHireAddonPrice(hireAddons.towel.price_zar) ? (
-                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                          {formatHireAddonPrice(hireAddons.towel.price_zar)}
-                        </span>
-                      ) : null}
-                    </button>
-                  ) : null}
-                </div>
-              </>
-            )}
+            {!isComplimentaryClass &&
+              !isFreeClass &&
+              !isPaidClassTicket &&
+              showHireAddons &&
+              (hireAddons.mat || hireAddons.towel) && (
+                <>
+                  <p className="mt-6 text-sm font-semibold">Add-ons for this class:</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {hireAddons.mat ? (
+                      <button
+                        key={hireAddons.mat.id}
+                        type="button"
+                        onClick={() => setMatAddon((v) => !v)}
+                        className={cn(
+                          "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                          matAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                        )}
+                      >
+                        🧘 {hireAddons.mat.name}
+                        {formatHireAddonPrice(hireAddons.mat.price_zar) ? (
+                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                            {formatHireAddonPrice(hireAddons.mat.price_zar)}
+                          </span>
+                        ) : null}
+                      </button>
+                    ) : null}
+                    {hireAddons.towel ? (
+                      <button
+                        key={hireAddons.towel.id}
+                        type="button"
+                        onClick={() => setTowelAddon((v) => !v)}
+                        className={cn(
+                          "min-w-[7rem] flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-colors",
+                          towelAddon ? "border-primary bg-primary/10" : "border-border bg-card",
+                        )}
+                      >
+                        🏷️ {hireAddons.towel.name}
+                        {formatHireAddonPrice(hireAddons.towel.price_zar) ? (
+                          <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                            {formatHireAddonPrice(hireAddons.towel.price_zar)}
+                          </span>
+                        ) : null}
+                      </button>
+                    ) : null}
+                  </div>
+                </>
+              )}
 
             <button
               type="button"
@@ -1124,9 +1164,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                   onClick={() => void joinClassWaitlist()}
                   disabled={
                     waitlistBusy ||
-                    (needsTicketPurchase
-                      ? false
-                      : !isFreeClass && !selectedCredit && !usePoints)
+                    (needsTicketPurchase ? false : !isFreeClass && !selectedCredit && !usePoints)
                   }
                   className="mt-6 w-full rounded-xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-50"
                 >
@@ -1177,6 +1215,13 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
           </div>
         </SheetContent>
       </Sheet>
+
+      <GuideCardSheet
+        classId={guideOpen ? session.id : null}
+        fallbackName={session.guide_name ?? null}
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+      />
 
       <Sheet open={inviteOpen} onOpenChange={setInviteOpen}>
         <SheetContent
