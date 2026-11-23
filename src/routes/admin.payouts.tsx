@@ -78,7 +78,37 @@ type LineItem = {
   complimentary?: boolean;
   /** Nobody booked: whether the guide stayed or left (Empty classes). */
   empty_outcome?: "stayed" | "left" | null;
+  /** The guide ticked this line as correct. */
+  confirmed?: boolean;
+  /** The rate their rate rules give for this class (null when no rule matches). */
+  rule_rate_zar?: number | null;
 };
+
+/** Which rate group a class falls in. */
+function rateGroupFor(classType: string): GuideRateRule["class_group"] {
+  if (classType === "reformer") return "reformer";
+  if (classType === "wellzone") return "wellzone";
+  if (classType === "sauna_journey") return "sauna_journey";
+  if (classType === "event") return "event";
+  return "mat";
+}
+
+/** The guide's rate for one class from their rules: most specific group first, then "All classes". */
+function ruleRateFor(rules: GuideRateRule[], classType: string, people: number): number | null {
+  const group = rateGroupFor(classType);
+  const order: GuideRateRule["class_group"][] =
+    group === "sauna_journey" ? ["sauna_journey", "wellzone", "all"] : [group, "all"];
+  for (const g of order) {
+    const hit = rules.find(
+      (r) =>
+        r.class_group === g &&
+        people >= Number(r.min_attendance ?? 0) &&
+        (r.max_attendance == null || people <= Number(r.max_attendance)),
+    );
+    if (hit) return Number(hit.rate_zar || 0);
+  }
+  return null;
+}
 
 type InvoiceRow = {
   id: string;
@@ -173,6 +203,8 @@ function PayoutsPage() {
   // Guide side
   const [guideClasses, setGuideClasses] = useState<LineItem[]>([]);
   const [rates, setRates] = useState<Record<string, string>>({});
+  /** Lines the guide has ticked as correct. */
+  const [confirmedLines, setConfirmedLines] = useState<Record<string, boolean>>({});
   const [loadingClasses, setLoadingClasses] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
@@ -384,9 +416,6 @@ function PayoutsPage() {
         empty_outcome: outcomeById.get(String(c.id)) ?? null,
       }));
     setGuideClasses(items);
-    const initialRates: Record<string, string> = {};
-    for (const it of items) initialRates[it.class_id ?? ""] = "";
-    setRates(initialRates);
   }, [me, meName, periodRange]);
 
   useEffect(() => {
@@ -402,6 +431,23 @@ function PayoutsPage() {
       .order("sort_order")
       .then(({ data }) => setMyRates((data ?? []) as GuideRateRule[]));
   }, [me, isGuide, teaches]);
+
+  // Fill each class's rate from the guide's rate rules. Nothing is ticked until the guide confirms.
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const it of guideClasses) {
+      const r = ruleRateFor(myRates, it.class_type, it.participants);
+      next[it.class_id ?? ""] = r == null ? "" : String(r);
+    }
+    setRates(next);
+    setConfirmedLines({});
+  }, [guideClasses, myRates]);
+
+  const payableIds = useMemo(
+    () => guideClasses.filter((it) => it.empty_outcome !== "left").map((it) => it.class_id ?? ""),
+    [guideClasses],
+  );
+  const allLinesConfirmed = payableIds.length > 0 && payableIds.every((id) => confirmedLines[id]);
 
   const guideSplit = useMemo(() => {
     const studio: LineItem[] = [];
@@ -426,13 +472,24 @@ function PayoutsPage() {
       const lineItems = guideClasses
         .map((it) => {
           const v = rates[it.class_id ?? ""] ?? "";
+          const rule = ruleRateFor(myRates, it.class_type, it.participants);
+          const base = {
+            ...it,
+            confirmed: !!confirmedLines[it.class_id ?? ""],
+            rule_rate_zar: rule,
+          };
           return v === "free"
-            ? { ...it, rate_zar: 0, free: true }
-            : { ...it, rate_zar: Number(v || 0), free: false };
+            ? { ...base, rate_zar: 0, free: true }
+            : { ...base, rate_zar: Number(v || 0), free: false };
         })
         .filter((it) => it.empty_outcome !== "left" && (it.free || it.rate_zar > 0));
       if (lineItems.length === 0) {
         toast.error("Add a rate, or mark Free, for at least one class");
+        setSubmitting(false);
+        return;
+      }
+      if (!allLinesConfirmed) {
+        toast.error("Please tick Confirmed on every class first");
         setSubmitting(false);
         return;
       }
@@ -608,6 +665,7 @@ function PayoutsPage() {
             disabled={
               submitting ||
               !ratesConfirmed ||
+              !allLinesConfirmed ||
               (guideTotal <= 0 && !Object.values(rates).includes("free"))
             }
             className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
@@ -711,17 +769,49 @@ function PayoutsPage() {
         </div>
       ) : (
         <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            <span className="text-muted-foreground">
+              Rates are filled in from your rates. Check each one and tick Confirmed.{" "}
+              <span className="font-semibold text-foreground">
+                {payableIds.filter((id) => confirmedLines[id]).length} of {payableIds.length}{" "}
+                confirmed
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmedLines(
+                  allLinesConfirmed ? {} : Object.fromEntries(payableIds.map((id) => [id, true])),
+                )
+              }
+              className="rounded-full border border-[#5f7a52] px-3 py-1.5 text-xs font-semibold text-[#3d4f36]"
+            >
+              {allLinesConfirmed ? "Untick all" : "Confirm all"}
+            </button>
+          </div>
           <ClassRateGroup
             title="Studio classes"
             items={guideSplit.studio}
             rates={rates}
-            setRate={(id, v) => setRates((r) => ({ ...r, [id]: v }))}
+            myRates={myRates}
+            confirmed={confirmedLines}
+            setRate={(id, v) => {
+              setRates((r) => ({ ...r, [id]: v }));
+              setConfirmedLines((c) => ({ ...c, [id]: false }));
+            }}
+            toggleConfirmed={(id) => setConfirmedLines((c) => ({ ...c, [id]: !c[id] }))}
           />
           <ClassRateGroup
             title="Wellzone"
             items={guideSplit.wellzone}
             rates={rates}
-            setRate={(id, v) => setRates((r) => ({ ...r, [id]: v }))}
+            myRates={myRates}
+            confirmed={confirmedLines}
+            setRate={(id, v) => {
+              setRates((r) => ({ ...r, [id]: v }));
+              setConfirmedLines((c) => ({ ...c, [id]: false }));
+            }}
+            toggleConfirmed={(id) => setConfirmedLines((c) => ({ ...c, [id]: !c[id] }))}
           />
           <div className="rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/70 p-5 text-right shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#3d4f36]">
@@ -1093,12 +1183,18 @@ function ClassRateGroup({
   title,
   items,
   rates,
+  myRates,
+  confirmed,
   setRate,
+  toggleConfirmed,
 }: {
   title: string;
   items: LineItem[];
   rates: Record<string, string>;
+  myRates: GuideRateRule[];
+  confirmed: Record<string, boolean>;
   setRate: (id: string, v: string) => void;
+  toggleConfirmed: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   return (
@@ -1149,7 +1245,22 @@ function ClassRateGroup({
                 Nobody came and you left, so this class isn&apos;t paid.
               </p>
             ) : (
-              <div className="flex items-center gap-2 sm:justify-end">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                {(() => {
+                  const id = it.class_id ?? "";
+                  const rule = ruleRateFor(myRates, it.class_type, it.participants);
+                  const v = rates[id] ?? "";
+                  if (v === "free") return null;
+                  if (rule == null)
+                    return <span className="text-[11px] text-muted-foreground">No rate set</span>;
+                  if (Number(v || 0) !== rule)
+                    return (
+                      <span className="text-[11px] font-semibold text-[#8a6d12]">
+                        Your rate is R{rule.toLocaleString("en-ZA")}
+                      </span>
+                    );
+                  return null;
+                })()}
                 <Label htmlFor={`rate-${it.class_id}`} className="text-xs text-muted-foreground">
                   Rate (ZAR)
                 </Label>
@@ -1178,6 +1289,19 @@ function ClassRateGroup({
                   title="I taught this class for free"
                 >
                   Free
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleConfirmed(it.class_id ?? "")}
+                  aria-pressed={!!confirmed[it.class_id ?? ""]}
+                  className={
+                    confirmed[it.class_id ?? ""]
+                      ? "inline-flex items-center gap-1 rounded-full border border-[#5f7a52] bg-[#5f7a52] px-3 py-1.5 text-xs font-semibold text-white"
+                      : "inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground"
+                  }
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Confirmed
                 </button>
               </div>
             )}
@@ -1236,6 +1360,11 @@ function InvoiceDetail({
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {li.free ? "Free" : formatRand(li.rate_zar)}
+                      {!li.free && li.rule_rate_zar != null && li.rule_rate_zar !== li.rate_zar ? (
+                        <span className="block text-[11px] font-semibold text-[#8a6d12]">
+                          Rate is {formatRand(li.rule_rate_zar)}
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
