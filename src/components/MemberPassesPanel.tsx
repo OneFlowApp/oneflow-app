@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getUser, supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth";
+import { isStaff } from "@/lib/roleAccess";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { formatStudioDateShort } from "@/lib/timezone";
 
@@ -144,6 +146,9 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
   const [rules, setRules] = useState<PauseRules>({ fee: 300, minWeeks: 1, maxWeeks: 4 });
   const [pausing, setPausing] = useState<Pass | null>(null);
   const [gifting, setGifting] = useState<Pass | null>(null);
+  // Team members (guides and staff) can't gift passes on: theirs are staff passes or staff-priced.
+  const { profile } = useAuth();
+  const viewerIsStaff = isStaff(profile);
 
   const load = useCallback(async () => {
     const user = await getUser();
@@ -262,7 +267,8 @@ export function MemberPassesPanel({ compact = false }: { compact?: boolean }) {
                   ) : null}
                 </div>
               ) : null}
-              {p.giftable &&
+              {!viewerIsStaff &&
+                p.giftable &&
               !p.pause &&
               p.parts.every((x) => x.unlimited || x.remaining >= x.total) ? (
                 <button
