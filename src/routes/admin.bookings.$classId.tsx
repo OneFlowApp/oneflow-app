@@ -210,7 +210,7 @@ function BookingClassDetailPage() {
       const { data: bookingData, error: bookingErr } = await supabase
         .from("bookings")
         .select(
-          "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, paid_where, booked_by, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
+          "id, status, cancelled_at, late_cancel, profile_id, class_id, payment_method, credit_id, unpaid, paid_where, booked_by, class_invite_id, mat_addon, towel_addon, created_at, profiles ( first_name, last_name, role ), classes ( id, name, starts_at, ends_at )",
         )
         .eq("class_id", classId)
         .order("created_at", { ascending: true });
@@ -254,6 +254,31 @@ function BookingClassDetailPage() {
             .filter((x, i): x is string => Boolean(x) && x !== raw[i]?.profile_id),
         ),
       ];
+      // Places a friend paid for (class invites): show who paid instead of "Free class".
+      const inviteIds = [
+        ...new Set(
+          raw
+            .map((r) => (r as { class_invite_id?: string | null }).class_invite_id)
+            .filter((x): x is string => Boolean(x)),
+        ),
+      ];
+      const inviterByInvite = new Map<string, string>();
+      if (inviteIds.length) {
+        const { data: invs } = await supabase
+          .from("class_invites")
+          .select("id, inviter:inviter_id(first_name, last_name)")
+          .in("id", inviteIds);
+        for (const iv of (invs ?? []) as {
+          id: string;
+          inviter:
+            | { first_name: string | null; last_name: string | null }
+            | { first_name: string | null; last_name: string | null }[]
+            | null;
+        }[]) {
+          const p = one(iv.inviter);
+          inviterByInvite.set(iv.id, [p?.first_name, p?.last_name].filter(Boolean).join(" "));
+        }
+      }
       const [addonAccess, creditInfo, staffRes] = await Promise.all([
         fetchRosterMemberAddonAccess(supabase),
         fetchBookingCredits(
@@ -316,6 +341,10 @@ function BookingClassDetailPage() {
               r.credit_id ? creditInfo.get(r.credit_id) : null,
               {
                 paidWhere: (r as { paid_where?: string | null }).paid_where,
+                paidByFriend: (() => {
+                  const iv = (r as { class_invite_id?: string | null }).class_invite_id;
+                  return iv ? (inviterByInvite.get(iv) ?? "") : null;
+                })(),
               },
             ) +
             (() => {

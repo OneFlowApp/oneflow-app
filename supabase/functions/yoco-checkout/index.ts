@@ -271,7 +271,7 @@ serve(async (req) => {
 
     const { data: inv, error: invErr } = await supabase
       .from("class_invites")
-      .select("id, inviter_id, status, paid_by_inviter, class_id, classes(id, name)")
+      .select("id, inviter_id, invitee_id, invitee_email, status, paid_by_inviter, class_id, classes(id, name)")
       .eq("id", class_invite_id)
       .maybeSingle();
 
@@ -298,6 +298,42 @@ serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Don't take a second payment for the same friend and class: already paid for, or already booked.
+    {
+      const iv = inv as { class_id?: string | null; invitee_id?: string | null; invitee_email?: string | null };
+      if (iv.class_id) {
+        let paidQ = supabase
+          .from("class_invites")
+          .select("id")
+          .eq("class_id", iv.class_id)
+          .not("yoco_payment_id", "is", null)
+          .neq("id", class_invite_id)
+          .limit(1);
+        if (iv.invitee_id) paidQ = paidQ.eq("invitee_id", iv.invitee_id);
+        else if (iv.invitee_email) paidQ = paidQ.ilike("invitee_email", iv.invitee_email);
+        else paidQ = paidQ.eq("id", "00000000-0000-0000-0000-000000000000");
+        const { data: alreadyPaid } = await paidQ;
+        let alreadyBooked: unknown[] | null = null;
+        if (iv.invitee_id) {
+          const { data } = await supabase
+            .from("bookings")
+            .select("id")
+            .eq("class_id", iv.class_id)
+            .eq("profile_id", iv.invitee_id)
+            .in("status", ["confirmed", "attended"])
+            .limit(1);
+          alreadyBooked = data;
+        }
+        if ((alreadyPaid && alreadyPaid.length) || (alreadyBooked && alreadyBooked.length)) {
+          await supabase.from("class_invites").update({ status: "cancelled" }).eq("id", class_invite_id);
+          return new Response(
+            JSON.stringify({ error: "Your friend's place in this class is already paid for or booked" }),
+            { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
     }
 
     // The invite price is set on the server only; any amount sent by the app is ignored.
