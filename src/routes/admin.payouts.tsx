@@ -381,7 +381,7 @@ function PayoutsPage() {
     const { data: classRows, error } = await supabase
       .from("classes")
       .select(
-        "id, name, class_type, starts_at, location, capacity, booked_count, guide_id, is_free",
+        "id, name, class_type, starts_at, location, capacity, booked_count, guide_id, is_free, class_types(is_free_intro)",
       )
       .gte("starts_at", fromIso)
       .lt("starts_at", toIso)
@@ -429,7 +429,17 @@ function PayoutsPage() {
         participants: Number(c.booked_count ?? 0),
         capacity: Number(c.capacity ?? 0),
         rate_zar: 0,
-        complimentary: c.is_free === true,
+        // Free if ticked Free on the schedule, or its class type is free (e.g. Yoga: Beginners).
+        complimentary:
+          c.is_free === true ||
+          (() => {
+            const t = c.class_types as
+              | { is_free_intro?: boolean | null }
+              | { is_free_intro?: boolean | null }[]
+              | null;
+            const row = Array.isArray(t) ? t[0] : t;
+            return row?.is_free_intro === true;
+          })(),
         empty_outcome: outcomeById.get(String(c.id)) ?? null,
       }));
     setGuideClasses(items);
