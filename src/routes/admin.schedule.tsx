@@ -2190,22 +2190,28 @@ function SchedulePage() {
                                     }}
                                   >
                                     {/* Time gutter: fixed width + border-r so the divider runs full row height and stacks flush into one continuous day line. */}
-                                    <span className="flex w-[8.75rem] shrink-0 items-center whitespace-nowrap border-r border-border px-2.5 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:text-xs">
+                                    {/* Phones: start over end in a narrow gutter, so the class name has room. */}
+                                    <span className="flex w-[4.75rem] shrink-0 flex-col justify-center whitespace-nowrap border-r border-border px-2 font-mono text-[11px] font-semibold tabular-nums text-foreground sm:w-[8.75rem] sm:flex-row sm:items-center sm:justify-start sm:px-2.5 sm:text-xs">
                                       {formatTime(c.starts_at)}
-                                      <span className="text-muted-foreground">–</span>
-                                      {formatTime(c.ends_at)}
+                                      <span className="hidden text-muted-foreground sm:inline">
+                                        –
+                                      </span>
+                                      <span className="font-normal text-muted-foreground sm:font-semibold sm:text-foreground">
+                                        {formatTime(c.ends_at)}
+                                      </span>
                                     </span>
-                                    <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2">
+                                    {/* Phones: name and count on top, guide and switches underneath. */}
+                                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 px-3 py-2 sm:flex-nowrap">
                                       {canManage ? (
                                         <Checkbox
                                           checked={isSelected}
                                           onCheckedChange={() => toggleSelected(c.id)}
                                           onClick={(e) => e.stopPropagation()}
-                                          className="shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
+                                          className="order-1 shrink-0 data-[state=checked]:border-[#a3b693] data-[state=checked]:bg-[#a3b693]"
                                           aria-label={`Select ${title}`}
                                         />
                                       ) : null}
-                                      <div className="min-w-0 flex-1">
+                                      <div className="order-2 min-w-0 flex-1">
                                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                           <p className="truncate font-display text-sm font-semibold text-foreground">
                                             {title}
@@ -2222,7 +2228,7 @@ function SchedulePage() {
                                         </p>
                                       </div>
                                       <div
-                                        className="flex w-[10.5rem] shrink-0 flex-col items-stretch gap-0.5 sm:w-44"
+                                        className="order-4 flex w-full shrink-0 flex-col items-stretch gap-0.5 sm:order-3 sm:w-44"
                                         onClick={(e) => e.stopPropagation()}
                                         onKeyDown={(e) => e.stopPropagation()}
                                       >
@@ -2271,7 +2277,7 @@ function SchedulePage() {
                                       </div>
                                       {canManage ? (
                                         <div
-                                          className="flex shrink-0 flex-col gap-0.5"
+                                          className="order-5 flex shrink-0 flex-row flex-wrap gap-1 sm:order-4 sm:flex-col sm:gap-0.5"
                                           onClick={(e) => e.stopPropagation()}
                                           onKeyDown={(e) => e.stopPropagation()}
                                         >
@@ -2327,7 +2333,7 @@ function SchedulePage() {
                                           ) : null}
                                         </div>
                                       ) : null}
-                                      <span className="shrink-0 tabular-nums text-xs font-semibold text-muted-foreground">
+                                      <span className="order-3 shrink-0 tabular-nums text-xs font-semibold text-muted-foreground sm:order-5">
                                         {c.booked_count ?? 0}/{c.capacity}
                                       </span>
                                     </div>
