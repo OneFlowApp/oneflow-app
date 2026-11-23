@@ -28,10 +28,13 @@ export async function fetchBookingCredits(
 export function bookingPaymentLabel(
   paymentMethod: string | null,
   credit: BookingCreditInfo | null | undefined,
-  extra?: { unpaid?: boolean | null; paidWhere?: string | null },
+  extra?: { unpaid?: boolean | null; paidWhere?: string | null; paidByFriend?: string | null },
 ): string {
   const m = String(paymentMethod ?? "").toLowerCase();
   if (extra?.unpaid) return "Not paid yet";
+  // A friend invited them and paid for their place.
+  if (extra?.paidByFriend != null)
+    return `Paid by ${extra.paidByFriend.trim() || "a friend"} (invite)`;
   if (!credit && extra?.paidWhere?.trim()) return extra.paidWhere.trim();
   if (m === "free") return "Free class";
   if (m === "flow_points") return "Flow Points";
