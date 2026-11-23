@@ -143,6 +143,8 @@ function PayoutsPage() {
 
   // Director side
   const [tab, setTab] = useState<string>("submitted");
+  /** Also teaches (a guide role alongside another role): can submit their own invoice. */
+  const [teaches, setTeaches] = useState(false);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(true);
   const [q, setQ] = useState("");
@@ -243,6 +245,7 @@ function PayoutsPage() {
               ),
       );
       setMeName(`${rec?.first_name ?? ""} ${rec?.last_name ?? ""}`.trim() || "Guide");
+      setTeaches(roleSet.has("guide"));
     })();
   }, []);
 
@@ -363,8 +366,8 @@ function PayoutsPage() {
   }, [me, meName, periodRange]);
 
   useEffect(() => {
-    if (isGuide) void loadGuideClasses();
-  }, [isGuide, loadGuideClasses]);
+    if (isGuide || teaches) void loadGuideClasses();
+  }, [isGuide, teaches, loadGuideClasses]);
 
   const guideSplit = useMemo(() => {
     const studio: LineItem[] = [];
@@ -550,144 +553,145 @@ function PayoutsPage() {
     );
   }
 
-  if (isGuide) {
-    return (
-      <div>
-        <PageHeader
-          title="Submit invoice"
-          description={`Hi ${meName}, add your rate for each class you taught ${periodRange.label}. Due by ${periodRange.dueLabel}.`}
-          actions={
-            <Button
-              type="button"
-              onClick={() => setConfirmSubmitOpen(true)}
-              disabled={submitting || (guideTotal <= 0 && !Object.values(rates).includes("free"))}
-              className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-            >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              Submit invoice ({formatRand(guideTotal)})
-            </Button>
-          }
-        />
+  // The invoice screen for anyone who teaches (also shown to directors who teach, as "My invoice").
+  const guideView = (
+    <div>
+      <PageHeader
+        title="Submit invoice"
+        description={`Hi ${meName}, add your rate for each class you taught ${periodRange.label}. Due by ${periodRange.dueLabel}.`}
+        actions={
+          <Button
+            type="button"
+            onClick={() => setConfirmSubmitOpen(true)}
+            disabled={submitting || (guideTotal <= 0 && !Object.values(rates).includes("free"))}
+            className="gap-2 bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+          >
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+            Submit invoice ({formatRand(guideTotal)})
+          </Button>
+        }
+      />
 
-        <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice month">
-          {(["previous", "current"] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              role="tab"
-              aria-selected={period === p}
-              onClick={() => setPeriod(p)}
-              className={
-                period === p
-                  ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-4 py-1.5 text-sm font-semibold text-white"
-                  : "rounded-full border border-border bg-card px-4 py-1.5 text-sm font-semibold"
-              }
-            >
-              {p === "previous" ? "Previous cycle" : "This cycle"}
-            </button>
+      <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Invoice month">
+        {(["previous", "current"] as const).map((p) => (
+          <button
+            key={p}
+            type="button"
+            role="tab"
+            aria-selected={period === p}
+            onClick={() => setPeriod(p)}
+            className={
+              period === p
+                ? "rounded-full border border-[#5f7a52] bg-[#5f7a52] px-4 py-1.5 text-sm font-semibold text-white"
+                : "rounded-full border border-border bg-card px-4 py-1.5 text-sm font-semibold"
+            }
+          >
+            {p === "previous" ? "Previous cycle" : "This cycle"}
+          </button>
+        ))}
+      </div>
+      <p
+        className={
+          periodRange.overdue
+            ? "mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            : "mb-4 rounded-xl border border-[#d4af37]/50 bg-[#d4af37]/10 px-3 py-2 text-sm"
+        }
+      >
+        {periodRange.label} ·{" "}
+        {periodRange.overdue
+          ? `Was due by ${periodRange.dueLabel}. Submit as soon as you can.`
+          : periodRange.open
+            ? `This cycle is still running. Submit on the 26th or 27th, by ${periodRange.dueLabel}.`
+            : `Submit by ${periodRange.dueLabel}.`}
+      </p>
+
+      {loadingClasses ? (
+        <div className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-2xl" />
           ))}
         </div>
-        <p
-          className={
-            periodRange.overdue
-              ? "mb-4 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              : "mb-4 rounded-xl border border-[#d4af37]/50 bg-[#d4af37]/10 px-3 py-2 text-sm"
-          }
-        >
-          {periodRange.label} ·{" "}
-          {periodRange.overdue
-            ? `Was due by ${periodRange.dueLabel}. Submit as soon as you can.`
-            : periodRange.open
-              ? `This cycle is still running. Submit on the 26th or 27th, by ${periodRange.dueLabel}.`
-              : `Submit by ${periodRange.dueLabel}.`}
-        </p>
-
-        {loadingClasses ? (
-          <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-2xl" />
-            ))}
-          </div>
-        ) : guideClasses.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
-            <CircleDollarSign className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
-            <p className="text-sm text-muted-foreground">
-              No classes to invoice for {periodRange.label}. Classes already on an invoice
-              aren&apos;t listed again.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <ClassRateGroup
-              title="Studio classes"
-              items={guideSplit.studio}
-              rates={rates}
-              setRate={(id, v) => setRates((r) => ({ ...r, [id]: v }))}
-            />
-            <ClassRateGroup
-              title="Wellzone"
-              items={guideSplit.wellzone}
-              rates={rates}
-              setRate={(id, v) => setRates((r) => ({ ...r, [id]: v }))}
-            />
-            <div className="rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/70 p-5 text-right shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-wide text-[#3d4f36]">
-                Running total
-              </p>
-              <p className="mt-1 font-display text-3xl font-bold">{formatRand(guideTotal)}</p>
-            </div>
-          </div>
-        )}
-
-        <h3 className="mt-8 mb-3 font-display text-lg font-semibold">My invoices</h3>
-        <InvoicesList
-          loading={loadingInvoices}
-          rows={invoices.filter((i) => i.guide_id === me)}
-          isAdmin={false}
-          onOpen={(inv) => setDetail(inv)}
-        />
-
-        <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
-          <InvoiceDetail
-            inv={detail}
-            isAdmin={false}
-            onApprove={() => detail && void setStatus(detail, "approved")}
-            onMarkPaid={() => detail && void setStatus(detail, "paid")}
+      ) : guideClasses.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-border bg-card py-16 text-center">
+          <CircleDollarSign className="h-10 w-10 text-muted-foreground" strokeWidth={1.5} />
+          <p className="text-sm text-muted-foreground">
+            No classes to invoice for {periodRange.label}. Classes already on an invoice aren&apos;t
+            listed again.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <ClassRateGroup
+            title="Studio classes"
+            items={guideSplit.studio}
+            rates={rates}
+            setRate={(id, v) => setRates((r) => ({ ...r, [id]: v }))}
           />
-        </Dialog>
+          <ClassRateGroup
+            title="Wellzone"
+            items={guideSplit.wellzone}
+            rates={rates}
+            setRate={(id, v) => setRates((r) => ({ ...r, [id]: v }))}
+          />
+          <div className="rounded-2xl border border-[#c5d4b8]/80 bg-[#f4f7f0]/70 p-5 text-right shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#3d4f36]">
+              Running total
+            </p>
+            <p className="mt-1 font-display text-3xl font-bold">{formatRand(guideTotal)}</p>
+          </div>
+        </div>
+      )}
 
-        <AlertDialog open={confirmSubmitOpen} onOpenChange={setConfirmSubmitOpen}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Submit this invoice?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Total: {formatRand(guideTotal)}. Once submitted, the directors will review and
-                approve.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={(e) => {
-                  e.preventDefault();
-                  void submitGuideInvoice();
-                }}
-                disabled={submitting}
-                className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
-              >
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Submit
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </div>
-    );
-  }
+      <h3 className="mt-8 mb-3 font-display text-lg font-semibold">My invoices</h3>
+      <InvoicesList
+        loading={loadingInvoices}
+        rows={invoices.filter((i) => i.guide_id === me)}
+        isAdmin={false}
+        onOpen={(inv) => setDetail(inv)}
+      />
+
+      <Dialog open={isGuide && !!detail} onOpenChange={(o) => !o && setDetail(null)}>
+        <InvoiceDetail
+          inv={detail}
+          isAdmin={false}
+          onApprove={() => detail && void setStatus(detail, "approved")}
+          onMarkPaid={() => detail && void setStatus(detail, "paid")}
+        />
+      </Dialog>
+
+      <AlertDialog open={confirmSubmitOpen} onOpenChange={setConfirmSubmitOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Submit this invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Total: {formatRand(guideTotal)}. Once submitted, the directors will review and
+              approve.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void submitGuideInvoice();
+              }}
+              disabled={submitting}
+              className="bg-[#a3b693] text-white hover:bg-[#8fa67d]"
+            >
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Submit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+
+  if (isGuide) return guideView;
 
   // Director / management view
   return (
@@ -703,7 +707,13 @@ function PayoutsPage() {
             Submitted ({invoices.filter((i) => i.status === "pending").length})
           </TabsTrigger>
           <TabsTrigger value="inbox">All invoices</TabsTrigger>
+          {teaches ? <TabsTrigger value="mine">My invoice</TabsTrigger> : null}
         </TabsList>
+        {teaches ? (
+          <TabsContent value="mine" className="mt-0">
+            {guideView}
+          </TabsContent>
+        ) : null}
         <TabsContent value="submitted" className="mt-0">
           <p className="mb-3 text-sm text-muted-foreground">
             Invoices guides have submitted that are waiting for approval. Pay cycle: 26th to 25th,
