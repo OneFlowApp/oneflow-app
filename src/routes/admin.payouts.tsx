@@ -47,6 +47,7 @@ import {
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
+import { GuideRatesSection } from "@/components/admin/GuideRatesSection";
 
 export const Route = createFileRoute("/admin/payouts")({
   head: () => ({ meta: [{ title: "Payouts — One Flow Admin" }] }),
@@ -718,8 +719,14 @@ function PayoutsPage() {
             Submitted ({invoices.filter((i) => i.status === "pending").length})
           </TabsTrigger>
           <TabsTrigger value="inbox">All invoices</TabsTrigger>
+          {isAdmin ? <TabsTrigger value="rates">Guide rates</TabsTrigger> : null}
           {teaches ? <TabsTrigger value="mine">My invoice</TabsTrigger> : null}
         </TabsList>
+        {isAdmin ? (
+          <TabsContent value="rates" className="mt-0">
+            <GuideRatesSection />
+          </TabsContent>
+        ) : null}
         {teaches ? (
           <TabsContent value="mine" className="mt-0">
             {guideView}
