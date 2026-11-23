@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -70,6 +71,7 @@ type DraftType = {
   isActive: boolean;
   isFreeIntro: boolean;
   isGuided: boolean;
+  description: string;
   room: string;
 };
 
@@ -81,6 +83,7 @@ const EMPTY_DRAFT: DraftType = {
   isFreeIntro: false,
   isGuided: true,
   room: DEFAULT_STUDIO_ROOM,
+  description: "",
 };
 
 function draftFromRow(row: ClassTypeRow): DraftType {
@@ -92,6 +95,7 @@ function draftFromRow(row: ClassTypeRow): DraftType {
     isFreeIntro: row.is_free_intro,
     isGuided: row.is_guided,
     room: row.default_location || DEFAULT_STUDIO_ROOM,
+    description: row.description ?? "",
   };
 }
 
@@ -169,7 +173,10 @@ export function ClassTypesPanel({ canManage }: Props) {
     for (const u of updates) {
       const current = types.find((t) => t.id === u.id);
       if (current && current.sort_order === u.sort_order) continue;
-      const { error } = await supabase.from("class_types").update({ sort_order: u.sort_order }).eq("id", u.id);
+      const { error } = await supabase
+        .from("class_types")
+        .update({ sort_order: u.sort_order })
+        .eq("id", u.id);
       if (error) {
         setMovingId(null);
         toast.error(supabaseErrorMessage(error, "Could not reorder"));
@@ -203,10 +210,7 @@ export function ClassTypesPanel({ canManage }: Props) {
     [catalog.types],
   );
 
-  const takenSlugs = useMemo(
-    () => new Set(catalog.types.map((t) => t.slug)),
-    [catalog.types],
-  );
+  const takenSlugs = useMemo(() => new Set(catalog.types.map((t) => t.slug)), [catalog.types]);
 
   const editingRow = useMemo(
     () => (editingId ? (catalog.types.find((t) => t.id === editingId) ?? null) : null),
@@ -251,7 +255,9 @@ export function ClassTypesPanel({ canManage }: Props) {
       ? editingRow.sort_order
       : Math.max(
           0,
-          ...catalog.types.filter((t) => t.category_id === draft.categoryId).map((t) => t.sort_order),
+          ...catalog.types
+            .filter((t) => t.category_id === draft.categoryId)
+            .map((t) => t.sort_order),
         ) + 10;
     const category = catalog.categoryById.get(draft.categoryId);
     if (!category) {
@@ -267,8 +273,7 @@ export function ClassTypesPanel({ canManage }: Props) {
         // "Power" between categories must not silently change which credits cover it —
         // its legacy_class_type is `power`, not its old category's billing enum.
         const parentLegacy = previousCategory?.legacy_class_type ?? previousCategory?.slug;
-        const inherited =
-          previousCategory != null && editingRow.legacy_class_type === parentLegacy;
+        const inherited = previousCategory != null && editingRow.legacy_class_type === parentLegacy;
         const legacy =
           inherited && draft.categoryId !== editingRow.category_id
             ? category.legacy_class_type
@@ -284,6 +289,7 @@ export function ClassTypesPanel({ canManage }: Props) {
             is_free_intro: draft.isFreeIntro,
             is_guided: draft.isGuided,
             default_location: draft.room,
+            description: draft.description.trim() || null,
             sort_order: Math.round(sortOrder),
           })
           .eq("id", editingRow.id);
@@ -307,6 +313,7 @@ export function ClassTypesPanel({ canManage }: Props) {
           is_free_intro: draft.isFreeIntro,
           is_guided: draft.isGuided,
           default_location: draft.room,
+          description: draft.description.trim() || null,
           sort_order: Math.round(sortOrder),
         });
         if (error) throw error;
@@ -392,7 +399,8 @@ export function ClassTypesPanel({ canManage }: Props) {
       <div className="rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
         <p className="font-medium text-foreground">Class types are not set up yet.</p>
         <p className="mt-1">
-          Push <code className="font-mono text-xs">20260817120000_class_categories_and_types.sql</code>{" "}
+          Push{" "}
+          <code className="font-mono text-xs">20260817120000_class_categories_and_types.sql</code>{" "}
           to create the categories and types tables, then reload this page.
         </p>
       </div>
@@ -403,9 +411,8 @@ export function ClassTypesPanel({ canManage }: Props) {
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted-foreground">
-          Renaming a type retitles every class of that type. Switch a type off to pause it, or
-          open it and press Delete to remove an old type from this list. Past classes keep
-          their name.
+          Renaming a type retitles every class of that type. Switch a type off to pause it, or open
+          it and press Delete to remove an old type from this list. Past classes keep their name.
         </p>
         {canManage ? (
           <Button
@@ -424,130 +431,133 @@ export function ClassTypesPanel({ canManage }: Props) {
           <div key={parent.name}>
             <h2 className="mb-2 font-display text-base font-bold text-foreground">{parent.name}</h2>
             <div className="space-y-4 border-l-2 border-[#c5d4b8] pl-3">
-        {parent.groups.map(({ category, types }) => (
-          <section key={category.id}>
-            <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
-              <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
-                {category.name}
-                <span className="ml-2 font-sans font-medium normal-case tracking-normal text-muted-foreground">
-                  — {types.length} type{types.length === 1 ? "" : "s"}
-                </span>
-              </h2>
-              {canManage ? (
-                <Select value={category.parent_group?.trim() || ""} onValueChange={(v) => void setParent(category.id, v)}>
-                  <SelectTrigger className="h-7 w-auto gap-1 border-none bg-transparent px-1 text-xs text-muted-foreground shadow-none">
-                    <SelectValue placeholder="Choose group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {parentOptions.map((g) => (
-                      <SelectItem key={g} value={g}>
-                        Under {g}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : null}
-            </div>
-            {types.length === 0 ? (
-              <p className="px-1 py-1.5 text-xs text-muted-foreground">No types yet</p>
-            ) : (
-              <ul className="overflow-hidden rounded-xl border border-border bg-card">
-                {types.map((t, i) => {
-                  const theme = classTypeTheme(t.slug);
-                  return (
-                    <li key={t.id} className="border-b border-border last:border-b-0">
-                      <div
-                        role={canManage ? "button" : undefined}
-                        tabIndex={canManage ? 0 : undefined}
-                        onClick={() => openEdit(t)}
-                        onKeyDown={(e) => {
-                          if (!canManage) return;
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            openEdit(t);
-                          }
-                        }}
-                        className={cn(
-                          "flex items-center gap-3 border-l-4 px-3 py-2 transition",
-                          theme.tint,
-                          canManage && "cursor-pointer hover:bg-muted/40",
-                          !t.is_active && "opacity-55",
-                        )}
-                        style={{
-                          borderLeftColor: theme.accent,
-                          backgroundColor: theme.tintBg || undefined,
-                        }}
+              {parent.groups.map(({ category, types }) => (
+                <section key={category.id}>
+                  <div className="mb-1.5 flex items-baseline justify-between gap-3 border-b border-border pb-1">
+                    <h2 className="font-display text-xs font-bold uppercase tracking-wider text-[#3d4f36]">
+                      {category.name}
+                      <span className="ml-2 font-sans font-medium normal-case tracking-normal text-muted-foreground">
+                        — {types.length} type{types.length === 1 ? "" : "s"}
+                      </span>
+                    </h2>
+                    {canManage ? (
+                      <Select
+                        value={category.parent_group?.trim() || ""}
+                        onValueChange={(v) => void setParent(category.id, v)}
                       >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                            <p className="truncate font-display text-sm font-semibold text-foreground">
-                              {category.name}: {t.name}
-                            </p>
-                            {t.is_free_intro ? (
-                              <span className="shrink-0 rounded-full border border-[#c5d4b8] bg-primary-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#3d4f36]">
-                                Free intro
-                              </span>
-                            ) : null}
-                            {!t.is_guided ? (
-                              <span className="shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                                Unguided
-                              </span>
-                            ) : null}
-                          </div>
-                          <p className="truncate text-[11px] text-muted-foreground">
-                            {t.default_location ? `${t.default_location} · ` : ""}
-                            <span className="font-mono">{t.slug}</span>
-                          </p>
-                        </div>
-                        <div
-                          className="flex shrink-0 items-center gap-2"
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => e.stopPropagation()}
-                        >
-                          {canManage ? (
-                            <>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-7 w-7"
-                                disabled={i === 0 || movingId !== null}
-                                onClick={() => void moveType(types, i, -1)}
-                                aria-label={`Move ${t.name} up`}
+                        <SelectTrigger className="h-7 w-auto gap-1 border-none bg-transparent px-1 text-xs text-muted-foreground shadow-none">
+                          <SelectValue placeholder="Choose group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {parentOptions.map((g) => (
+                            <SelectItem key={g} value={g}>
+                              Under {g}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null}
+                  </div>
+                  {types.length === 0 ? (
+                    <p className="px-1 py-1.5 text-xs text-muted-foreground">No types yet</p>
+                  ) : (
+                    <ul className="overflow-hidden rounded-xl border border-border bg-card">
+                      {types.map((t, i) => {
+                        const theme = classTypeTheme(t.slug);
+                        return (
+                          <li key={t.id} className="border-b border-border last:border-b-0">
+                            <div
+                              role={canManage ? "button" : undefined}
+                              tabIndex={canManage ? 0 : undefined}
+                              onClick={() => openEdit(t)}
+                              onKeyDown={(e) => {
+                                if (!canManage) return;
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  openEdit(t);
+                                }
+                              }}
+                              className={cn(
+                                "flex items-center gap-3 border-l-4 px-3 py-2 transition",
+                                theme.tint,
+                                canManage && "cursor-pointer hover:bg-muted/40",
+                                !t.is_active && "opacity-55",
+                              )}
+                              style={{
+                                borderLeftColor: theme.accent,
+                                backgroundColor: theme.tintBg || undefined,
+                              }}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                  <p className="truncate font-display text-sm font-semibold text-foreground">
+                                    {category.name}: {t.name}
+                                  </p>
+                                  {t.is_free_intro ? (
+                                    <span className="shrink-0 rounded-full border border-[#c5d4b8] bg-primary-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#3d4f36]">
+                                      Free intro
+                                    </span>
+                                  ) : null}
+                                  {!t.is_guided ? (
+                                    <span className="shrink-0 rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                      Unguided
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {t.default_location ? `${t.default_location} · ` : ""}
+                                  <span className="font-mono">{t.slug}</span>
+                                </p>
+                              </div>
+                              <div
+                                className="flex shrink-0 items-center gap-2"
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => e.stopPropagation()}
                               >
-                                <ArrowUp className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="ghost"
-                                className="h-7 w-7"
-                                disabled={i === types.length - 1 || movingId !== null}
-                                onClick={() => void moveType(types, i, 1)}
-                                aria-label={`Move ${t.name} down`}
-                              >
-                                <ArrowDown className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
-                          ) : null}
-                          {togglingId === t.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                          ) : null}
-                          <Switch
-                            checked={t.is_active}
-                            onCheckedChange={(v) => void toggleActive(t, v)}
-                            disabled={!canManage || togglingId === t.id}
-                            aria-label={`${t.name} active`}
-                          />
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-        ))}
+                                {canManage ? (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7"
+                                      disabled={i === 0 || movingId !== null}
+                                      onClick={() => void moveType(types, i, -1)}
+                                      aria-label={`Move ${t.name} up`}
+                                    >
+                                      <ArrowUp className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7"
+                                      disabled={i === types.length - 1 || movingId !== null}
+                                      onClick={() => void moveType(types, i, 1)}
+                                      aria-label={`Move ${t.name} down`}
+                                    >
+                                      <ArrowDown className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                ) : null}
+                                {togglingId === t.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                ) : null}
+                                <Switch
+                                  checked={t.is_active}
+                                  onCheckedChange={(v) => void toggleActive(t, v)}
+                                  disabled={!canManage || togglingId === t.id}
+                                  aria-label={`${t.name} active`}
+                                />
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              ))}
             </div>
           </div>
         ))}
@@ -573,7 +583,10 @@ export function ClassTypesPanel({ canManage }: Props) {
           {showDeleted ? (
             <ul className="divide-y divide-border border-t border-border">
               {deletedTypes.map((t) => (
-                <li key={t.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                >
                   <span className="min-w-0 truncate text-muted-foreground">
                     {(catalog.categoryById.get(t.category_id)?.name ?? "Class") + ": " + t.name}
                   </span>
@@ -601,7 +614,10 @@ export function ClassTypesPanel({ canManage }: Props) {
         </section>
       ) : null}
 
-      <AlertDialog open={deleteRow !== null} onOpenChange={(o) => !deleting && !o && setDeleteRow(null)}>
+      <AlertDialog
+        open={deleteRow !== null}
+        onOpenChange={(o) => !deleting && !o && setDeleteRow(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{deleteRow?.name}”?</AlertDialogTitle>
@@ -728,8 +744,8 @@ export function ClassTypesPanel({ canManage }: Props) {
                   Has a guide
                 </Label>
                 <p className="text-xs text-muted-foreground">
-                  Off for unguided sessions — class creation stops asking for a guide and
-                  bulk reassignment skips them.
+                  Off for unguided sessions — class creation stops asking for a guide and bulk
+                  reassignment skips them.
                 </p>
               </div>
               <Switch
@@ -738,10 +754,23 @@ export function ClassTypesPanel({ canManage }: Props) {
                 onCheckedChange={(v) => setDraft((d) => ({ ...d, isGuided: v }))}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ct-description">Description for members</Label>
+              <Textarea
+                id="ct-description"
+                rows={4}
+                value={draft.description}
+                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                placeholder="What to expect, who it suits, what to bring"
+              />
+              <p className="text-xs text-muted-foreground">
+                Shows on the schedule and when booking, unless a class has its own description.
+              </p>
+            </div>
             {editingRow ? (
               <p className="text-xs text-muted-foreground">
-                Slug <span className="font-mono">{editingRow.slug}</span> is fixed — guide
-                records and existing bookings reference it.
+                Slug <span className="font-mono">{editingRow.slug}</span> is fixed — guide records
+                and existing bookings reference it.
               </p>
             ) : null}
           </div>

@@ -35,6 +35,7 @@ import {
 } from "@/lib/scheduleBooking";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/TypeBadge";
+import { GuideCardSheet } from "@/components/GuideCardSheet";
 import { WeekDayStrip, weekdayStripLetter } from "@/components/WeekDayStrip";
 import { CurrentTimeLine, currentTimeLineInsertIndex } from "@/components/CurrentTimeLine";
 import { classTypeTheme } from "@/lib/classTypeTheme";
@@ -761,9 +762,15 @@ function ScheduleRow({
   onReserve: () => void;
 }) {
   const [descExpanded, setDescExpanded] = useState(false);
-  const desc = session.description?.trim() ?? "";
+  const [guideOpen, setGuideOpen] = useState(false);
   // Subscribe so a class-type rename repaints the row title and badge.
-  useClassCatalog();
+  const { catalog } = useClassCatalog();
+  // The class's own description, or else its class type's (Master → Class types).
+  const desc =
+    session.description?.trim() ||
+    (session.class_type_id
+      ? (catalog.types.find((t) => t.id === session.class_type_id)?.description ?? "").trim()
+      : "");
 
   const guideName = guideNameFromRow(session.guide_name);
   const badgeType = displayClassType(classTypeSlugFor(session) ?? session.class_type);
@@ -827,13 +834,30 @@ function ScheduleRow({
             {classTitle(session)}
           </h3>
           {guideName ? (
-            <p className="mt-0.5 text-xs font-medium leading-snug" style={{ color: SAGE }}>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setGuideOpen(true);
+              }}
+              className="mt-0.5 text-left text-xs font-medium leading-snug underline decoration-dotted underline-offset-2"
+              style={{ color: SAGE }}
+            >
               {guideName}
-            </p>
+            </button>
           ) : null}
         </div>
-        <TypeBadge type={badgeType} size="sm" className="shrink-0" />
+        {/* Only the Guided / Unguided pill: other type pills repeat the class name. */}
+        {/guided/i.test(badgeType) ? (
+          <TypeBadge type={badgeType} size="sm" className="shrink-0" />
+        ) : null}
       </div>
+      <GuideCardSheet
+        classId={guideOpen ? session.id : null}
+        fallbackName={guideName}
+        open={guideOpen}
+        onOpenChange={setGuideOpen}
+      />
 
       <p className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-relaxed text-muted-foreground">
         <span className="inline-flex flex-wrap items-center gap-1 font-medium tabular-nums">

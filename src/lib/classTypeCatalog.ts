@@ -5,10 +5,7 @@
  * Kept separate from that module so the canonical class-type logic stays free of a
  * Supabase dependency and remains importable from tests and non-browser contexts.
  */
-import {
-  hydrateClassTypeCatalog,
-  type ClassCatalogEntry,
-} from "@/lib/allowedClassTypes";
+import { hydrateClassTypeCatalog, type ClassCatalogEntry } from "@/lib/allowedClassTypes";
 import { supabase } from "@/lib/supabase";
 
 export type ClassCategoryRow = {
@@ -39,6 +36,8 @@ export type ClassTypeRow = {
   deleted_at?: string | null;
   /** Room the class is normally held in; fills Location when scheduling. */
   default_location?: string | null;
+  /** What members read about this kind of class when a class has no description of its own. */
+  description?: string | null;
 };
 
 export type ClassCatalog = {
@@ -56,7 +55,7 @@ export const EMPTY_CLASS_CATALOG: ClassCatalog = {
 
 const CATEGORY_COLUMNS = "id, slug, name, colour, sort_order, legacy_class_type, parent_group";
 const TYPE_COLUMNS =
-  "id, category_id, slug, name, legacy_class_type, is_free_intro, is_guided, colour, is_active, sort_order, deleted_at, default_location";
+  "id, category_id, slug, name, legacy_class_type, is_free_intro, is_guided, colour, is_active, sort_order, deleted_at, default_location, description";
 
 /**
  * Fetch both levels. Returns an empty catalog on failure rather than throwing — every
@@ -91,8 +90,7 @@ export async function fetchClassCatalog(): Promise<{
   const categories = ((categoryRows ?? []) as Omit<ClassCategoryRow, "legacy_class_type">[]).map(
     (c) => ({
       ...c,
-      legacy_class_type:
-        (c as { legacy_class_type?: string }).legacy_class_type?.trim() || c.slug,
+      legacy_class_type: (c as { legacy_class_type?: string }).legacy_class_type?.trim() || c.slug,
     }),
   );
   const types = (typeRes.data ?? []) as ClassTypeRow[];
@@ -159,9 +157,7 @@ export function deriveClassTitle(
   catalog: ClassCatalog,
   args: { classTypeId: string | null | undefined; categoryName: string | null },
 ): string {
-  const type = args.classTypeId
-    ? catalog.types.find((t) => t.id === args.classTypeId)
-    : undefined;
+  const type = args.classTypeId ? catalog.types.find((t) => t.id === args.classTypeId) : undefined;
   if (!type) return args.categoryName ?? "";
   const category = catalog.categoryById.get(type.category_id);
   if (!category) return type.name;
