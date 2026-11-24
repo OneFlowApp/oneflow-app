@@ -21,6 +21,7 @@ import {
 } from "@/lib/flowPointsRedemption";
 import { useStudioWhatsAppUrl } from "@/lib/studioContact";
 import { cn } from "@/lib/utils";
+import { promoAppliesToProduct, type PromoScope } from "@/lib/promoApplies";
 
 /** Legacy `?category=` deep links (e.g. from credit balances) open sections containing that category. */
 const LINKABLE_PRICING_CATEGORIES = ["yoga", "wellzone", "all_access", "power"] as const;
@@ -57,10 +58,9 @@ type PricingSectionRow = {
   is_active: boolean | null;
 };
 
-type PromoDetails = {
+type PromoDetails = PromoScope & {
   discount_type: string;
   discount_value: number;
-  applies_to: string;
 };
 
 type ProductRow = {
@@ -132,12 +132,7 @@ function promoDiscountZar(
   priceZar: number,
 ): number {
   if (!promo) return 0;
-  const cat = String(product.category ?? "");
-  const appliesOk =
-    promo.applies_to === "all" ||
-    (promo.applies_to === "yoga" && cat === "yoga") ||
-    (promo.applies_to === "wellzone" && cat === "wellzone");
-  if (!appliesOk) return 0;
+  if (!promoAppliesToProduct(promo, product)) return 0;
   const value = Number(promo.discount_value) || 0;
   const discount = promo.discount_type === "percentage" ? (priceZar * value) / 100 : value;
   return Math.min(priceZar, Math.max(0, discount));
@@ -860,7 +855,7 @@ function PricingPage() {
                   const { data: promo } = await supabase
                     .from("promotions")
                     .select(
-                      "code, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active",
+                      "code, discount_type, discount_value, applies_to, applies_section_ids, applies_class_types, applies_product_ids, max_uses, uses_count, valid_from, valid_until, is_active",
                     )
                     .eq("code", code)
                     .maybeSingle();
@@ -912,6 +907,9 @@ function PricingPage() {
                     discount_type: p.discount_type,
                     discount_value: Number(p.discount_value) || 0,
                     applies_to: p.applies_to,
+                    applies_section_ids: (p as PromoScope).applies_section_ids ?? [],
+                    applies_class_types: (p as PromoScope).applies_class_types ?? [],
+                    applies_product_ids: (p as PromoScope).applies_product_ids ?? [],
                   });
                   setPromoStatus({ kind: "valid", label });
                   toast.success(`Code applied — ${label}`);

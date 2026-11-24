@@ -18,13 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -36,6 +30,46 @@ import { ensureMarketingAdminAccess } from "@/lib/ensureMarketingAdminAccess";
 import { getUser, supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { cn } from "@/lib/utils";
+import { ALLOWED_CLASS_TYPE_SLUGS, CLASS_TYPE_SLUG_LABEL } from "@/lib/allowedClassTypes";
+import { Checkbox } from "@/components/ui/checkbox";
+
+/** A titled list of tick boxes for choosing what a promo code applies to. */
+function PromoTickList({
+  title,
+  options,
+  selected,
+  onChange,
+  scroll,
+}: {
+  title: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  scroll?: boolean;
+}) {
+  const toggle = (v: string) =>
+    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold">
+        {title}
+        {selected.length ? ` · ${selected.length} chosen` : ""}
+      </p>
+      <div className={cn("grid gap-1.5 sm:grid-cols-2", scroll && "max-h-48 overflow-y-auto pr-1")}>
+        {options.map((o) => (
+          <label key={o.value} className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={selected.includes(o.value)}
+              onCheckedChange={() => toggle(o.value)}
+            />
+            <span className="truncate">{o.label}</span>
+          </label>
+        ))}
+        {options.length === 0 ? <p className="text-xs text-muted-foreground">None set up</p> : null}
+      </div>
+    </div>
+  );
+}
 
 export const Route = createFileRoute("/admin/promotions")({
   beforeLoad: ({ location }) => ensureMarketingAdminAccess(location.pathname),
@@ -47,7 +81,7 @@ const TZ = "Africa/Johannesburg";
 const PAGE_SIZE = 20;
 
 type DiscountType = "percentage" | "fixed";
-type AppliesTo = "all" | "yoga" | "wellzone";
+type AppliesTo = "all" | "yoga" | "wellzone" | "custom";
 type SortKey = "code_asc" | "expiry_soonest" | "uses_desc";
 
 type PromoRow = {
@@ -58,6 +92,9 @@ type PromoRow = {
   discount_type: DiscountType;
   discount_value: number;
   applies_to: AppliesTo;
+  applies_section_ids?: string[] | null;
+  applies_class_types?: string[] | null;
+  applies_product_ids?: string[] | null;
   max_uses: number | null;
   uses_count: number;
   valid_from: string | null;
@@ -104,9 +141,16 @@ function discountLabel(p: PromoRow): string {
   return `R${Number(p.discount_value).toLocaleString("en-ZA")}`;
 }
 
-function appliesLabel(applies: AppliesTo): string {
+function appliesLabel(applies: AppliesTo, p?: PromoRow): string {
   if (applies === "yoga") return "Yoga only";
   if (applies === "wellzone") return "Wellzone only";
+  if (applies === "custom") {
+    const n =
+      (p?.applies_section_ids?.length ?? 0) +
+      (p?.applies_class_types?.length ?? 0) +
+      (p?.applies_product_ids?.length ?? 0);
+    return `Chosen (${n})`;
+  }
   return "All products";
 }
 
@@ -126,6 +170,47 @@ function PromotionsPage() {
   const [discountType, setDiscountType] = useState<DiscountType>("percentage");
   const [discountValue, setDiscountValue] = useState("10");
   const [appliesTo, setAppliesTo] = useState<AppliesTo>("all");
+  const [sectionIds, setSectionIds] = useState<string[]>([]);
+  const [classTypes, setClassTypes] = useState<string[]>([]);
+  const [productIds, setProductIds] = useState<string[]>([]);
+  const [sections, setSections] = useState<{ id: string; name: string }[]>([]);
+  const [products, setProducts] = useState<
+    { id: string; name: string; pricing_section_id: string | null }[]
+  >([]);
+  useEffect(() => {
+    void (async () => {
+      const [sec, prod] = await Promise.all([
+        supabase
+          .from("pricing_sections")
+          .select("id, name, sort_order")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true }),
+        supabase
+          .from("products")
+          .select("id, name, pricing_section_id, is_staff_only, sort_order")
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true }),
+      ]);
+      setSections(
+        ((sec.data ?? []) as { id: string; name: string }[]).map((r) => ({
+          id: r.id,
+          name: r.name,
+        })),
+      );
+      setProducts(
+        (
+          (prod.data ?? []) as {
+            id: string;
+            name: string;
+            pricing_section_id: string | null;
+            is_staff_only?: boolean | null;
+          }[]
+        )
+          .filter((r) => !r.is_staff_only)
+          .map((r) => ({ id: r.id, name: r.name, pricing_section_id: r.pricing_section_id })),
+      );
+    })();
+  }, []);
   const [maxUses, setMaxUses] = useState("");
   const [validFrom, setValidFrom] = useState("");
   const [validUntil, setValidUntil] = useState("");
@@ -136,7 +221,7 @@ function PromotionsPage() {
     const { data, error } = await supabase
       .from("promotions")
       .select(
-        "id, code, name, description, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active, created_at",
+        "id, code, name, description, discount_type, discount_value, applies_to, applies_section_ids, applies_class_types, applies_product_ids, max_uses, uses_count, valid_from, valid_until, is_active, created_at",
       )
       .order("created_at", { ascending: false })
       .limit(500);
@@ -192,6 +277,9 @@ function PromotionsPage() {
     setDiscountType("percentage");
     setDiscountValue("10");
     setAppliesTo("all");
+    setSectionIds([]);
+    setClassTypes([]);
+    setProductIds([]);
     setMaxUses("");
     setValidFrom("");
     setValidUntil("");
@@ -212,6 +300,9 @@ function PromotionsPage() {
     setDiscountType(p.discount_type);
     setDiscountValue(String(p.discount_value));
     setAppliesTo(p.applies_to);
+    setSectionIds(p.applies_section_ids ?? []);
+    setClassTypes(p.applies_class_types ?? []);
+    setProductIds(p.applies_product_ids ?? []);
     setMaxUses(p.max_uses == null ? "" : String(p.max_uses));
     setValidFrom(p.valid_from ? new Date(p.valid_from).toISOString().slice(0, 10) : "");
     setValidUntil(p.valid_until ? new Date(p.valid_until).toISOString().slice(0, 10) : "");
@@ -247,6 +338,10 @@ function PromotionsPage() {
     const vf = validFrom ? new Date(validFrom).toISOString() : null;
     const vu = validUntil ? new Date(`${validUntil}T23:59:59`).toISOString() : null;
 
+    if (appliesTo === "custom" && sectionIds.length + classTypes.length + productIds.length === 0) {
+      toast.error("Choose at least one section, class type or product");
+      return;
+    }
     setSaving(true);
     const user = await getUser();
 
@@ -259,6 +354,9 @@ function PromotionsPage() {
       discount_type: discountType,
       discount_value: dv,
       applies_to: appliesTo,
+      applies_section_ids: appliesTo === "custom" ? sectionIds : [],
+      applies_class_types: appliesTo === "custom" ? classTypes : [],
+      applies_product_ids: appliesTo === "custom" ? productIds : [],
       max_uses: mu,
       valid_from: vf,
       valid_until: vu,
@@ -267,10 +365,7 @@ function PromotionsPage() {
 
     try {
       if (editingId) {
-        const { error } = await supabase
-          .from("promotions")
-          .update(payload)
-          .eq("id", editingId);
+        const { error } = await supabase.from("promotions").update(payload).eq("id", editingId);
         if (error) throw error;
         toast.success("Promotion updated");
       } else {
@@ -293,10 +388,7 @@ function PromotionsPage() {
   };
 
   const toggleActive = async (p: PromoRow, next: boolean) => {
-    const { error } = await supabase
-      .from("promotions")
-      .update({ is_active: next })
-      .eq("id", p.id);
+    const { error } = await supabase.from("promotions").update({ is_active: next }).eq("id", p.id);
     if (error) {
       console.error("promotion toggle failed", error);
       toast.error(supabaseErrorMessage(error, "Could not update promotion"));
@@ -388,11 +480,9 @@ function PromotionsPage() {
                         </p>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-5 py-3 tabular-nums">
-                      {discountLabel(p)}
-                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 tabular-nums">{discountLabel(p)}</td>
                     <td className="px-5 py-3 text-muted-foreground">
-                      {appliesLabel(p.applies_to)}
+                      {appliesLabel(p.applies_to, p)}
                     </td>
                     <td className="whitespace-nowrap px-5 py-3 tabular-nums text-muted-foreground">
                       {p.uses_count}
@@ -554,10 +644,44 @@ function PromotionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All products</SelectItem>
-                  <SelectItem value="yoga">Yoga only</SelectItem>
-                  <SelectItem value="wellzone">Wellzone only</SelectItem>
+                  <SelectItem value="custom">Choose sections, class types or products</SelectItem>
+                  {appliesTo === "yoga" ? (
+                    <SelectItem value="yoga">Yoga only (older code)</SelectItem>
+                  ) : null}
+                  {appliesTo === "wellzone" ? (
+                    <SelectItem value="wellzone">Wellzone only (older code)</SelectItem>
+                  ) : null}
                 </SelectContent>
               </Select>
+              {appliesTo === "custom" ? (
+                <div className="mt-1 space-y-3 rounded-xl border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">
+                    The code works on any pass that matches at least one tick.
+                  </p>
+                  <PromoTickList
+                    title="Pricing sections"
+                    options={sections.map((x) => ({ value: x.id, label: x.name }))}
+                    selected={sectionIds}
+                    onChange={setSectionIds}
+                  />
+                  <PromoTickList
+                    title="Class types (passes that can book them)"
+                    options={ALLOWED_CLASS_TYPE_SLUGS.map((t) => ({
+                      value: t,
+                      label: CLASS_TYPE_SLUG_LABEL[t] ?? t,
+                    }))}
+                    selected={classTypes}
+                    onChange={setClassTypes}
+                  />
+                  <PromoTickList
+                    title="Single products"
+                    options={products.map((x) => ({ value: x.id, label: x.name }))}
+                    selected={productIds}
+                    onChange={setProductIds}
+                    scroll
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="grid gap-1.5">

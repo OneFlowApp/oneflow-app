@@ -713,7 +713,7 @@ serve(async (req) => {
     const { data: promo } = await supabase
       .from("promotions")
       .select(
-        "id, code, discount_type, discount_value, applies_to, max_uses, uses_count, valid_from, valid_until, is_active",
+        "id, code, discount_type, discount_value, applies_to, applies_section_ids, applies_class_types, applies_product_ids, max_uses, uses_count, valid_from, valid_until, is_active",
       )
       .eq("code", rawPromoCode)
       .maybeSingle();
@@ -724,6 +724,9 @@ serve(async (req) => {
           discount_type: string;
           discount_value: number;
           applies_to: string;
+          applies_section_ids?: string[] | null;
+          applies_class_types?: string[] | null;
+          applies_product_ids?: string[] | null;
           max_uses: number | null;
           uses_count: number | null;
           valid_from: string | null;
@@ -739,10 +742,23 @@ serve(async (req) => {
         (validFrom == null || now >= validFrom) && (validUntil == null || now <= validUntil);
       const usesOk = p.max_uses == null || (p.uses_count ?? 0) < p.max_uses;
       const packCategory = String((pack as { category?: string }).category ?? "");
+      const packRow = pack as {
+        id?: string;
+        pricing_section_id?: string | null;
+        allowed_class_types?: string[] | null;
+      };
+      // Same rule as src/lib/promoApplies.ts.
       const appliesOk =
         p.applies_to === "all" ||
         (p.applies_to === "yoga" && packCategory === "yoga") ||
-        (p.applies_to === "wellzone" && packCategory === "wellzone");
+        (p.applies_to === "wellzone" && packCategory === "wellzone") ||
+        (p.applies_to === "custom" &&
+          ((p.applies_product_ids ?? []).includes(String(packRow.id ?? "")) ||
+            (!!packRow.pricing_section_id &&
+              (p.applies_section_ids ?? []).includes(packRow.pricing_section_id)) ||
+            (packRow.allowed_class_types ?? []).some((t) =>
+              (p.applies_class_types ?? []).map(String).includes(String(t)),
+            )));
       if (inWindow && usesOk && appliesOk && Number.isFinite(baseAmountCents)) {
         if (p.discount_type === "percentage") {
           promoDiscountCents = Math.min(
