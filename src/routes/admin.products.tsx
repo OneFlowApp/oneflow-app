@@ -53,6 +53,8 @@ type ProductRow = {
   price_zar: number;
   credit_count: number | null;
   validity_days: number | null;
+  max_bookings_per_week?: number | null;
+  max_bookings_per_day?: number | null;
   allowed_class_types: string[] | null;
   is_addon: boolean;
   is_staff_only: boolean;
@@ -327,6 +329,9 @@ function ProductsPage() {
   const [description, setDescription] = useState("");
   const [priceZar, setPriceZar] = useState("");
   const [validityDays, setValidityDays] = useState("30");
+  /** Booking limits: blank = no limit. */
+  const [maxPerWeek, setMaxPerWeek] = useState("");
+  const [maxPerDay, setMaxPerDay] = useState("");
   const [isAddon, setIsAddon] = useState(false);
   const [isActive, setIsActive] = useState(true);
   const [pricingSectionId, setPricingSectionId] = useState(NO_PRICING_SECTION);
@@ -352,7 +357,7 @@ function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name, category, description, price_zar, credit_count, validity_days, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids, is_continuous, can_pause",
+        "id, name, category, description, price_zar, credit_count, validity_days, max_bookings_per_week, max_bookings_per_day, allowed_class_types, is_addon, is_staff_only, is_active, sort_order, pricing_section_id, access_scope, upgrade_price_zar, member_price_zar, mat_included, shower_towel_included, offer_with_product_ids, is_continuous, can_pause",
       )
       .order("category", { ascending: true })
       .order("name", { ascending: true });
@@ -373,6 +378,10 @@ function ProductsPage() {
       price_zar: Number(raw.price_zar ?? 0),
       credit_count: raw.credit_count == null ? null : Number(raw.credit_count),
       validity_days: raw.validity_days == null ? null : Number(raw.validity_days),
+      max_bookings_per_week:
+        raw.max_bookings_per_week == null ? null : Number(raw.max_bookings_per_week),
+      max_bookings_per_day:
+        raw.max_bookings_per_day == null ? null : Number(raw.max_bookings_per_day),
       allowed_class_types: normalizeClassTypes(raw.allowed_class_types),
       is_addon: Boolean(raw.is_addon),
       is_staff_only: Boolean(raw.is_staff_only),
@@ -459,7 +468,10 @@ function ProductsPage() {
       }))
       .filter((g) => g.items.length > 0);
     const other = candidates
-      .filter((r) => !r.pricing_section_id || !pricingSections.some((sec) => sec.id === r.pricing_section_id))
+      .filter(
+        (r) =>
+          !r.pricing_section_id || !pricingSections.some((sec) => sec.id === r.pricing_section_id),
+      )
       .sort((a, b) => a.name.localeCompare(b.name));
     if (other.length > 0) groups.push({ id: "__other", name: "Other products", items: other });
     return groups;
@@ -530,6 +542,8 @@ function ProductsPage() {
     setDescription(d.description);
     setPriceZar(d.priceZar);
     setValidityDays(d.validityDays);
+    setMaxPerWeek("");
+    setMaxPerDay("");
     setIsAddon(d.isAddon);
     setIsActive(d.isActive);
     setPricingSectionId(d.pricingSectionId);
@@ -549,6 +563,8 @@ function ProductsPage() {
     setDescription(p.description ?? "");
     setPriceZar(String(p.price_zar ?? ""));
     setValidityDays(String(p.validity_days ?? ""));
+    setMaxPerWeek(p.max_bookings_per_week == null ? "" : String(p.max_bookings_per_week));
+    setMaxPerDay(p.max_bookings_per_day == null ? "" : String(p.max_bookings_per_day));
     setIsAddon(p.is_addon);
     setIsActive(p.is_active);
     setPricingSectionId(p.pricing_section_id ?? NO_PRICING_SECTION);
@@ -766,6 +782,10 @@ function ProductsPage() {
       price_zar: price,
       credit_count: creditCount,
       validity_days: vd,
+      max_bookings_per_week:
+        maxPerWeek.trim() && Number(maxPerWeek) > 0 ? Math.floor(Number(maxPerWeek)) : null,
+      max_bookings_per_day:
+        maxPerDay.trim() && Number(maxPerDay) > 0 ? Math.floor(Number(maxPerDay)) : null,
       allowed_class_types: allowedPayload,
       is_addon: isAddon,
       is_active: isActive,
@@ -1199,6 +1219,42 @@ function ProductsPage() {
             </div>
 
             <div>
+              <p className="text-sm font-medium">Booking limits</p>
+              <p className="text-xs text-muted-foreground">
+                Leave blank for no limit. A week runs Monday to Sunday. The team can still add
+                people past the limit from the bookings page.
+              </p>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <Label htmlFor="prod-max-week">Max classes a week</Label>
+                  <input
+                    id="prod-max-week"
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="No limit"
+                    value={maxPerWeek}
+                    onChange={(e) => setMaxPerWeek(e.target.value)}
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="prod-max-day">Max classes a day</Label>
+                  <input
+                    id="prod-max-day"
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="No limit"
+                    value={maxPerDay}
+                    onChange={(e) => setMaxPerDay(e.target.value)}
+                    className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-[#a3b693]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
               <Label htmlFor="prod-member-price">Member price (R)</Label>
               <input
                 id="prod-member-price"
@@ -1270,7 +1326,9 @@ function ProductsPage() {
 
             {accessScope !== "open_access" && (
               <div>
-                <Label htmlFor="prod-upgrade-price">Upgrade price for access to Longkloof &amp; Green Point (R)</Label>
+                <Label htmlFor="prod-upgrade-price">
+                  Upgrade price for access to Longkloof &amp; Green Point (R)
+                </Label>
                 <input
                   id="prod-upgrade-price"
                   type="number"
@@ -1318,8 +1376,8 @@ function ProductsPage() {
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-foreground">Members can pause</span>
                 <span className="block text-xs text-muted-foreground">
-                  Members can pause this pass once, from Me → Passes, for the weeks and fee set in Settings.
-                  Not available on Continuous Flow.
+                  Members can pause this pass once, from Me → Passes, for the weeks and fee set in
+                  Settings. Not available on Continuous Flow.
                 </span>
               </span>
             </label>
@@ -1327,12 +1385,14 @@ function ProductsPage() {
             <div className="rounded-lg border border-border bg-muted/15 px-3 py-2.5">
               <Label className="text-foreground">Offer as a monthly add-on</Label>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                When someone buys a ticked product, they&apos;re asked &ldquo;Would you like to
-                add {name.trim() || "this"}?&rdquo; before paying. Add-ons give mat or towel
-                access only, no class credits.
+                When someone buys a ticked product, they&apos;re asked &ldquo;Would you like to add{" "}
+                {name.trim() || "this"}?&rdquo; before paying. Add-ons give mat or towel access
+                only, no class credits.
               </p>
               {offerCandidateGroups.length === 0 ? (
-                <p className="mt-2 text-xs text-muted-foreground">No products to offer it with yet.</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  No products to offer it with yet.
+                </p>
               ) : (
                 <div className="mt-2 space-y-3">
                   {offerCandidateGroups.map((g) => {
@@ -1377,7 +1437,11 @@ function ProductsPage() {
                                   {prod.name}
                                   {prod.mat_included || prod.shower_towel_included ? (
                                     <span className="ml-1 text-xs text-muted-foreground">
-                                      ({[prod.mat_included ? "mat & towel" : null, prod.shower_towel_included ? "shower towel" : null]
+                                      (
+                                      {[
+                                        prod.mat_included ? "mat & towel" : null,
+                                        prod.shower_towel_included ? "shower towel" : null,
+                                      ]
                                         .filter(Boolean)
                                         .join(", ")}{" "}
                                       included)
