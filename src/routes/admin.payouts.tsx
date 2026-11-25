@@ -1447,18 +1447,62 @@ function InvoiceDetail({
               Email me a copy
             </Button>
           ) : null}
-          {isAdmin && inv.guide_details ? (
-            <div className="rounded-xl border border-border bg-muted/20 p-3 text-xs leading-relaxed">
-              <p className="font-semibold">{inv.guide_details.invoice_name}</p>
-              {inv.guide_details.id_or_reg_number ? (
-                <p>ID / Reg: {inv.guide_details.id_or_reg_number}</p>
+          {/* The invoice's From (guide's invoicing details) and Billed to (studio), as submitted. */}
+          {inv.guide_details || inv.bill_to ? (
+            <div className="grid gap-3 rounded-xl border border-border bg-muted/20 p-3 text-xs leading-relaxed sm:grid-cols-2">
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  From
+                </p>
+                {inv.guide_details ? (
+                  <>
+                    <p className="font-semibold">{inv.guide_details.invoice_name}</p>
+                    {inv.guide_details.address ? (
+                      <p className="whitespace-pre-line">{inv.guide_details.address}</p>
+                    ) : null}
+                    {inv.guide_details.id_or_reg_number ? (
+                      <p>ID / Reg: {inv.guide_details.id_or_reg_number}</p>
+                    ) : null}
+                    {inv.guide_details.vat_number ? (
+                      <p>VAT: {inv.guide_details.vat_number}</p>
+                    ) : null}
+                    {inv.guide_details.phone ? <p>{inv.guide_details.phone}</p> : null}
+                    {inv.guide_details.email ? <p>{inv.guide_details.email}</p> : null}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">No invoicing details on this invoice</p>
+                )}
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Billed to
+                </p>
+                {inv.bill_to ? (
+                  <>
+                    <p className="font-semibold">{inv.bill_to.name}</p>
+                    {inv.bill_to.address ? (
+                      <p className="whitespace-pre-line">{inv.bill_to.address}</p>
+                    ) : null}
+                    {inv.bill_to.reg ? <p>Reg: {inv.bill_to.reg}</p> : null}
+                    {inv.bill_to.vat ? <p>VAT: {inv.bill_to.vat}</p> : null}
+                    {inv.bill_to.email ? <p>{inv.bill_to.email}</p> : null}
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">Not recorded</p>
+                )}
+              </div>
+              {inv.guide_details ? (
+                <div className="sm:col-span-2">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Banking details
+                  </p>
+                  <p>
+                    {inv.guide_details.bank_name} · {inv.guide_details.account_holder} ·{" "}
+                    {inv.guide_details.account_number} · Branch {inv.guide_details.branch_code}
+                    {inv.guide_details.account_type ? ` · ${inv.guide_details.account_type}` : ""}
+                  </p>
+                </div>
               ) : null}
-              {inv.guide_details.vat_number ? <p>VAT: {inv.guide_details.vat_number}</p> : null}
-              <p>
-                {inv.guide_details.bank_name} · {inv.guide_details.account_holder} ·{" "}
-                {inv.guide_details.account_number} · Branch {inv.guide_details.branch_code}
-                {inv.guide_details.account_type ? ` · ${inv.guide_details.account_type}` : ""}
-              </p>
             </div>
           ) : null}
           <div className="overflow-x-auto rounded-xl border border-border">
