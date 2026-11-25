@@ -175,12 +175,64 @@ type MemberRow = {
   creditsDisplay: string;
   hasActiveCredits: boolean;
   lastVisit: string;
+  /** Last class attended (ISO), for sorting and the inactive filter. */
+  lastVisitAt: string | null;
+  visits30d: number;
+  visitsTotal: number;
   status: "active" | "paused" | "trial";
   waiverSigned: boolean;
   hasBooking: boolean;
   joinedAt: string | null;
   isReturningLegacy: boolean;
 };
+
+type CustomerSort =
+  | "name_asc"
+  | "name_desc"
+  | "joined_new"
+  | "joined_old"
+  | "visit_recent"
+  | "inactive_longest"
+  | "visits_most";
+
+const CUSTOMER_SORTS: [CustomerSort, string][] = [
+  ["name_asc", "Name A to Z"],
+  ["name_desc", "Name Z to A"],
+  ["joined_new", "Just joined"],
+  ["joined_old", "Joined longest ago"],
+  ["visit_recent", "Visited most recently"],
+  ["inactive_longest", "Inactive longest"],
+  ["visits_most", "Most visits (30 days)"],
+];
+
+function sortCustomers(list: MemberRow[], sort: CustomerSort): MemberRow[] {
+  const t = (iso: string | null) => (iso ? new Date(iso).getTime() : 0);
+  const byName = (a: MemberRow, b: MemberRow) =>
+    a.name.localeCompare(b.name, "en", { sensitivity: "base" });
+  const out = [...list];
+  switch (sort) {
+    case "name_desc":
+      return out.sort((a, b) => byName(b, a));
+    case "joined_new":
+      return out.sort((a, b) => t(b.joinedAt) - t(a.joinedAt) || byName(a, b));
+    case "joined_old":
+      return out.sort((a, b) => t(a.joinedAt) - t(b.joinedAt) || byName(a, b));
+    case "visit_recent":
+      return out.sort((a, b) => t(b.lastVisitAt) - t(a.lastVisitAt) || byName(a, b));
+    case "inactive_longest":
+      // Members who have been before, longest gap first; never-visited members go last.
+      return out.sort((a, b) => {
+        if (!a.lastVisitAt && !b.lastVisitAt) return byName(a, b);
+        if (!a.lastVisitAt) return 1;
+        if (!b.lastVisitAt) return -1;
+        return t(a.lastVisitAt) - t(b.lastVisitAt);
+      });
+    case "visits_most":
+      return out.sort((a, b) => b.visits30d - a.visits30d || byName(a, b));
+    default:
+      return out.sort(byName);
+  }
+}
 
 /** Responsive admin customers table — mobile: Name, Plan, Credits, Actions (+ checkbox). */
 const CUSTOMERS_COL = {
@@ -312,6 +364,9 @@ function CustomersPage() {
   const [chipWaiverUnsigned, setChipWaiverUnsigned] = useState(false);
   const [chipJoinedMonth, setChipJoinedMonth] = useState(false);
   const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [chipInactive, setChipInactive] = useState(false);
+  const [chipActive30, setChipActive30] = useState(false);
+  const [sortBy, setSortBy] = useState<CustomerSort>("name_asc");
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -436,10 +491,14 @@ function CustomersPage() {
 
     const creditsByProfile = new Map<string, EmbeddedCreditRow[]>();
     const bookedIds = new Set<string>();
+    const activity = new Map<
+      string,
+      { last_visit: string | null; visits_30d: number; visits_total: number }
+    >();
 
     if (ids.length > 0) {
-      const [{ data: bookingRows }, { data: creditRows, error: creditsErr }] = await Promise.all([
-        supabase.from("bookings").select("profile_id").in("profile_id", ids),
+      const [{ data: activityRows, error: activityErr }, { data: creditRows, error: creditsErr }] = await Promise.all([
+        supabase.rpc("customer_activity"),
         supabase
           .from("user_credits")
           .select(
@@ -470,9 +529,15 @@ function CustomersPage() {
         creditsByProfile.set(pid, list);
       }
 
-      for (const row of bookingRows ?? []) {
-        const pid = row.profile_id as string | null;
-        if (pid) bookedIds.add(pid);
+      if (activityErr) console.error("customers: activity load failed", activityErr);
+      for (const row of (activityRows ?? []) as {
+        profile_id: string;
+        last_visit: string | null;
+        visits_30d: number;
+        visits_total: number;
+      }[]) {
+        bookedIds.add(row.profile_id);
+        activity.set(row.profile_id, row);
       }
     }
 
@@ -496,7 +561,20 @@ function CustomersPage() {
         currentPlans: currentPlanLabels(embedded, nowMs),
         creditsDisplay,
         hasActiveCredits,
-        lastVisit: "—",
+        lastVisit: (() => {
+          const lv = activity.get(id)?.last_visit;
+          return lv
+            ? new Date(lv).toLocaleDateString("en-ZA", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+                timeZone: "Africa/Johannesburg",
+              })
+            : "—";
+        })(),
+        lastVisitAt: activity.get(id)?.last_visit ?? null,
+        visits30d: activity.get(id)?.visits_30d ?? 0,
+        visitsTotal: activity.get(id)?.visits_total ?? 0,
         status: "active" as const,
         waiverSigned: Boolean(waiverAt),
         hasBooking: bookedIds.has(id),
@@ -518,6 +596,8 @@ function CustomersPage() {
     Number(chipHasCredits) +
     Number(chipNoCredits) +
     Number(chipNeverBooked) +
+    Number(chipInactive) +
+    Number(chipActive30) +
     Number(chipWaiverUnsigned) +
     Number(chipJoinedMonth);
 
@@ -527,11 +607,13 @@ function CustomersPage() {
     setChipNeverBooked(false);
     setChipWaiverUnsigned(false);
     setChipJoinedMonth(false);
+    setChipInactive(false);
+    setChipActive30(false);
   };
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase();
-    return members.filter((m) => {
+    const list = members.filter((m) => {
       if (ql) {
         const hay = `${m.name} ${m.email}`.toLowerCase();
         if (!hay.includes(ql)) return false;
@@ -553,9 +635,16 @@ function CustomersPage() {
       ) {
         return false;
       }
+      // Inactive: came before, but not in the last 30 days.
+      if (chipInactive && !(m.visitsTotal > 0 && m.visits30d === 0)) return false;
+      if (chipActive30 && m.visits30d === 0) return false;
       return true;
     });
+    return sortCustomers(list, sortBy);
   }, [
+    chipInactive,
+    chipActive30,
+    sortBy,
     members,
     q,
     chipHasCredits,
@@ -1141,6 +1230,20 @@ function CustomersPage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="w-full sm:w-56">
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as CustomerSort)}>
+            <SelectTrigger className="w-full" aria-label="Sort customers">
+              <SelectValue placeholder="Sort" />
+            </SelectTrigger>
+            <SelectContent>
+              {CUSTOMER_SORTS.map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <span className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-xs font-semibold text-muted-foreground sm:w-auto sm:justify-start">
             <Filter className="h-3.5 w-3.5" aria-hidden />
@@ -1176,6 +1279,8 @@ function CustomersPage() {
                 () => setChipWaiverUnsigned((v) => !v),
               ] as const,
               ["Joined this month", chipJoinedMonth, () => setChipJoinedMonth((v) => !v)] as const,
+              ["Came in last 30 days", chipActive30, () => setChipActive30((v) => !v)] as const,
+              ["Inactive 30+ days", chipInactive, () => setChipInactive((v) => !v)] as const,
             ] as const
           ).map(([label, on, toggle]) => (
             <button
