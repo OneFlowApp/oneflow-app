@@ -22,6 +22,8 @@ function GoalsPage() {
   const { user } = useAuth();
   const { data: badges = [], isLoading: badgesLoading } = useMemberBadges(user?.id);
   const [weeklyGoal, setWeeklyGoal] = useState(DEFAULT_WEEKLY_GOAL);
+  /** Whether a goal was already saved (a change then applies from next week). */
+  const [hadSavedGoal, setHadSavedGoal] = useState(false);
   const [thisWeekCount, setThisWeekCount] = useState(0);
   const [streakWeeks, setStreakWeeks] = useState(0);
   const [longestStreak, setLongestStreak] = useState(0);
@@ -57,9 +59,9 @@ function GoalsPage() {
       return;
     }
 
-    const wg = weeklyGoalFromProfile(
-      (prof as { weekly_goal?: number | null } | null)?.weekly_goal,
-    );
+    const rawGoal = (prof as { weekly_goal?: number | null } | null)?.weekly_goal;
+    setHadSavedGoal(rawGoal != null);
+    const wg = weeklyGoalFromProfile(rawGoal);
     const curStreak = Number(
       (prof as { current_streak?: number | null } | null)?.current_streak ?? 0,
     );
@@ -98,8 +100,14 @@ function GoalsPage() {
       toast.error(error.message);
       return;
     }
-    toast.success("Weekly goal saved");
+    // The week already under way keeps its goal; the new one counts from next week.
+    toast.success(
+      hadSavedGoal && next !== weeklyGoal
+        ? `Saved. Your new goal of ${next} starts next week; this week stays at ${weeklyGoal}.`
+        : "Weekly goal saved",
+    );
     setWeeklyGoal(next);
+    setHadSavedGoal(true);
     setGoalInput(String(next));
     setEditingGoal(false);
   };
