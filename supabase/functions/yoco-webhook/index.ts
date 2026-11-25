@@ -434,7 +434,8 @@ serve(async (req) => {
 
   const upgraded = metadata.open_access_upgrade === true || metadata.open_access_upgrade === "true";
   const upgradeAmount = Number(metadata.upgrade_amount_zar ?? 0) || 0;
-  const isOpenAccess = upgraded || product.access_scope === "open_access";
+  // The Seeker is always both studios, whatever its product setting.
+  const isOpenAccess = upgraded || product.access_scope === "open_access" || isSeeker(product);
   const paidMeta = Number(metadata.amount_paid_zar);
   const paidZar = Number.isFinite(paidMeta) && paidMeta > 0 ? paidMeta : null;
   rows.forEach((r, i) => {
@@ -478,6 +479,26 @@ serve(async (req) => {
     if (giftErr) {
       console.error("yoco-webhook: gift insert failed", giftErr);
       return new Response("insert failed", { status: 500 });
+    }
+    // A Longkloof & Green Point pack bought as a gift: tell deeds@ now (the friend claims it later).
+    if (isOpenAccess) {
+      const { data: buyer } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, email")
+        .eq("id", profileId)
+        .maybeSingle();
+      const b: any = buyer ?? {};
+      await notifyOpenAccessPurchase({
+        "Member": `Gift from ${[b.first_name, b.last_name].filter(Boolean).join(" ") || "a member"}`,
+        "Buyer email": b.email ?? "",
+        "Gift for": String(metadata.gift_recipient ?? "").trim() || "Not named yet",
+        "Pack": product.name,
+        "Upgraded to Longkloof & Green Point": upgraded ? `Yes (+R${upgradeAmount})` : "No, pack already includes both",
+        "Amount paid": paidZar !== null ? `R${paidZar.toFixed(2)}` : "",
+        "Purchased": now.toISOString().slice(0, 16).replace("T", " ") + " UTC",
+        "Note": "Bought as a gift. The friend claims it with a link; check the app for who claimed it.",
+        "Yoco payment": paymentId,
+      });
     }
     return new Response("ok", { status: 200 });
   }
