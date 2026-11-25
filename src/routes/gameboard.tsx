@@ -158,11 +158,9 @@ function GameboardPage() {
                     : `Reach your goal of ${state.goal} classes this week to unlock a play.`}
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
-                {state.tier === "gold"
-                  ? "Gold: 2 plays a week and a sneak peek."
-                  : state.can_peek
-                    ? "Silver: you get a sneak peek before you choose. Gold cards get 2 plays a week."
-                    : "Silver and Gold cards get a sneak peek, and Gold gets 2 plays a week."}
+                {state.can_peek
+                  ? "One play a week. Your card gets a sneak peek before you choose."
+                  : "One play a week. Silver and Gold cards get a sneak peek before choosing."}
               </p>
             </section>
 
