@@ -6,6 +6,7 @@ import {
 } from "@/lib/checkInWindow";
 import { deleteMayChallengeCheckInForBooking } from "@/lib/mayChallengeCheckIn";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { bookingPaymentLabel, type BookingCreditInfo } from "@/lib/bookingPaymentLabel";
 import { formatStudioEmailDate, formatStudioTime12Upper } from "@/lib/timezone";
 
 export type BookingStatus = "attended" | "confirmed" | "cancelled" | "no-show";
@@ -26,6 +27,9 @@ export type BookingRow = {
   qr_used?: boolean | null;
   checked_in?: boolean | null;
   payment_method: string | null;
+  credit_id?: string | null;
+  unpaid?: boolean | null;
+  paid_where?: string | null;
   mat_addon?: boolean | null;
   towel_addon?: boolean | null;
   profiles: ProfileJoinRow | ProfileJoinRow[] | null;
@@ -122,7 +126,11 @@ export type RosterAddonAccessSets = {
   cafeProfileIds: Set<string>;
 };
 
-export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccessSets): RosterRow | null {
+export function normalizeBooking(
+  raw: BookingRow,
+  addonAccess: RosterAddonAccessSets,
+  credits?: Map<string, BookingCreditInfo>,
+): RosterRow | null {
   const prof = oneProfile(raw.profiles);
   const member = prof
     ? formatCheckInMemberName(prof.first_name, prof.last_name)
@@ -147,7 +155,12 @@ export function normalizeBooking(raw: BookingRow, addonAccess: RosterAddonAccess
     classStartsAt: cls.starts_at,
     classType: cls.class_type ?? null,
     startsAtLabel: `Today · ${formatClassTime(cls.starts_at)}`,
-    creditLabel: raw.payment_method?.replace(/_/g, " ") ?? "—",
+    // Same wording as the class bookings page: "Package · …", "Comp (no pack)", "Not paid yet".
+    creditLabel: bookingPaymentLabel(
+      raw.payment_method,
+      raw.credit_id ? credits?.get(raw.credit_id) : null,
+      { unpaid: raw.unpaid, paidWhere: raw.paid_where },
+    ),
     matAddon,
     towelAddon,
     hasSageCredit: addonAccess.cafeProfileIds.has(raw.profile_id),

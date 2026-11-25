@@ -3,6 +3,7 @@ import { ExternalLink, X } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { fetchBookingCredits } from "@/lib/bookingPaymentLabel";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import { type BookingRow, type RosterRow, normalizeBooking } from "@/lib/checkInRoster";
 import { fetchRosterMemberAddonAccess } from "@/components/admin/RosterAddonPills";
@@ -57,6 +58,9 @@ export function ClassRosterSheet({
         class_id,
         qr_token,
         payment_method,
+        credit_id,
+        unpaid,
+        paid_where,
         mat_addon,
         towel_addon,
         profiles ( first_name, last_name, avatar_url, role ),
@@ -80,8 +84,12 @@ export function ClassRosterSheet({
       }
 
       const rows = (bookingsData ?? []) as unknown as BookingRow[];
+      const credits = await fetchBookingCredits(
+        supabase,
+        rows.map((r) => r.credit_id),
+      );
       const normalized = rows
-        .map((row) => normalizeBooking(row, addonAccess))
+        .map((row) => normalizeBooking(row, addonAccess, credits))
         .filter((r): r is RosterRow => r !== null);
       setRoster(normalized);
       setWaitlist(waitlistRows);
