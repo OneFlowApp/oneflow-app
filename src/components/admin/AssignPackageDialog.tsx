@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { notifyBothStudios } from "@/lib/notifyBothStudios";
 import { formatStudioDateOnly } from "@/lib/timezone";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
 import {
@@ -685,7 +686,9 @@ export function AssignPackageDialog({
       toast.error("Enter the amount the member paid.");
       return;
     }
-    const bothStudios = product.access_scope === "open_access" || withBothStudios;
+    // The Seeker is always both studios, whatever its product setting.
+    const bothStudios =
+      product.access_scope === "open_access" || withBothStudios || /seeker/i.test(product.name);
 
     setSubmitting(true);
     const failures: PackageAssignFailure[] = [];
@@ -815,6 +818,23 @@ export function AssignPackageDialog({
       }
       if (assignees.length === 1) {
         insertedForSummary = insertedRows;
+      }
+
+      // Longkloof & Green Point loaded at the desk: tell deeds@ so Green Point can load it too.
+      if (bothStudios) {
+        await notifyBothStudios(
+          "A pack with Access to: Longkloof & Green Point was loaded in the admin side.",
+          t.displayName,
+          product.name,
+          {
+            Email: t.email ?? "",
+            Paid:
+              payWhere === "none"
+                ? "No payment recorded"
+                : `R${paidZar.toFixed(2)} ${payWhere === "green_point" ? "at De Waterkant" : "at the Longkloof desk"}`,
+            Expires: insertedRows[0]?.expires_at ? String(insertedRows[0].expires_at).slice(0, 10) : "",
+          },
+        );
       }
 
       const first = (t.firstName?.trim() || t.displayName.split(/\s+/)[0] || "there") as string;

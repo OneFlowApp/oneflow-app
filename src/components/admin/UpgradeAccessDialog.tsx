@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { supabaseErrorMessage } from "@/lib/supabaseErrors";
+import { notifyBothStudiosForCredit } from "@/lib/notifyBothStudios";
 
 type PaidWhere = "green_point" | "studio" | "none";
 
@@ -60,6 +61,13 @@ export function UpgradeAccessDialog({
       return;
     }
     toast.success("Upgraded: Access to Longkloof & Green Point");
+    void notifyBothStudiosForCredit(credit.id, "A pack was upgraded to Access to: Longkloof & Green Point.", {
+      Upgrade:
+        paidWhere === "none"
+          ? "No charge"
+          : `R${zar.toFixed(2)} ${paidWhere === "green_point" ? "paid at De Waterkant" : "paid at the Longkloof desk"}`,
+      Reference: reference,
+    });
     onDone();
     onClose();
   };
