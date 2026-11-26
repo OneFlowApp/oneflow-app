@@ -1414,6 +1414,25 @@ function InvoiceDetail({
   onEmailCopy?: () => void;
   sendingCopy?: boolean;
 }) {
+  // Invoices submitted before invoicing details existed (or before a guide filled them in)
+  // have no copy saved. Show the guide's current details and Longkloof's Billed to instead.
+  const [fallbackDetails, setFallbackDetails] = useState<GuideInvoiceDetails | null>(null);
+  const [fallbackBillTo, setFallbackBillTo] = useState<BillTo | null>(null);
+  useEffect(() => {
+    setFallbackDetails(null);
+    setFallbackBillTo(null);
+    if (!inv) return;
+    if (!inv.guide_details && inv.guide_id) {
+      void loadGuideDetails(inv.guide_id).then((d) =>
+        setFallbackDetails(missingDetails(d).length < 5 ? d : null),
+      );
+    }
+    if (!inv.bill_to) void loadBillTo().then(setFallbackBillTo);
+  }, [inv]);
+  const shownDetails = inv?.guide_details ?? fallbackDetails;
+  const shownBillTo = inv?.bill_to ?? fallbackBillTo;
+  const usingFallback = Boolean(inv && !inv.guide_details && fallbackDetails);
+
   return (
     <DialogContent className="max-w-2xl">
       <DialogHeader>
@@ -1448,58 +1467,66 @@ function InvoiceDetail({
             </Button>
           ) : null}
           {/* The invoice's From (guide's invoicing details) and Billed to (studio), as submitted. */}
-          {inv.guide_details || inv.bill_to ? (
+          {shownDetails || shownBillTo || (inv && !shownDetails) ? (
             <div className="grid gap-3 rounded-xl border border-border bg-muted/20 p-3 text-xs leading-relaxed sm:grid-cols-2">
               <div>
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   From
                 </p>
-                {inv.guide_details ? (
+                {shownDetails ? (
                   <>
-                    <p className="font-semibold">{inv.guide_details.invoice_name}</p>
-                    {inv.guide_details.address ? (
-                      <p className="whitespace-pre-line">{inv.guide_details.address}</p>
+                    <p className="font-semibold">{shownDetails.invoice_name}</p>
+                    {shownDetails.address ? (
+                      <p className="whitespace-pre-line">{shownDetails.address}</p>
                     ) : null}
-                    {inv.guide_details.id_or_reg_number ? (
-                      <p>ID / Reg: {inv.guide_details.id_or_reg_number}</p>
+                    {shownDetails.id_or_reg_number ? (
+                      <p>ID / Reg: {shownDetails.id_or_reg_number}</p>
                     ) : null}
-                    {inv.guide_details.vat_number ? (
-                      <p>VAT: {inv.guide_details.vat_number}</p>
+                    {shownDetails.vat_number ? (
+                      <p>VAT: {shownDetails.vat_number}</p>
                     ) : null}
-                    {inv.guide_details.phone ? <p>{inv.guide_details.phone}</p> : null}
-                    {inv.guide_details.email ? <p>{inv.guide_details.email}</p> : null}
+                    {shownDetails.phone ? <p>{shownDetails.phone}</p> : null}
+                    {shownDetails.email ? <p>{shownDetails.email}</p> : null}
                   </>
                 ) : (
-                  <p className="text-muted-foreground">No invoicing details on this invoice</p>
+                  <p className="text-muted-foreground">
+                    {"This guide hasn't added their invoicing details yet. Ask them to fill them in under Payouts."}
+                  </p>
                 )}
               </div>
               <div>
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Billed to
                 </p>
-                {inv.bill_to ? (
+                {shownBillTo ? (
                   <>
-                    <p className="font-semibold">{inv.bill_to.name}</p>
-                    {inv.bill_to.address ? (
-                      <p className="whitespace-pre-line">{inv.bill_to.address}</p>
+                    <p className="font-semibold">{shownBillTo.name}</p>
+                    {shownBillTo.address ? (
+                      <p className="whitespace-pre-line">{shownBillTo.address}</p>
                     ) : null}
-                    {inv.bill_to.reg ? <p>Reg: {inv.bill_to.reg}</p> : null}
-                    {inv.bill_to.vat ? <p>VAT: {inv.bill_to.vat}</p> : null}
-                    {inv.bill_to.email ? <p>{inv.bill_to.email}</p> : null}
+                    {shownBillTo.reg ? <p>Reg: {shownBillTo.reg}</p> : null}
+                    {shownBillTo.vat ? <p>VAT: {shownBillTo.vat}</p> : null}
+                    {shownBillTo.email ? <p>{shownBillTo.email}</p> : null}
                   </>
                 ) : (
                   <p className="text-muted-foreground">Not recorded</p>
                 )}
               </div>
-              {inv.guide_details ? (
+              {usingFallback ? (
+                <p className="text-[11px] text-muted-foreground sm:col-span-2">
+                  Not saved with this invoice (submitted before invoicing details existed). Showing the
+                  guide&apos;s current details.
+                </p>
+              ) : null}
+              {shownDetails ? (
                 <div className="sm:col-span-2">
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Banking details
                   </p>
                   <p>
-                    {inv.guide_details.bank_name} · {inv.guide_details.account_holder} ·{" "}
-                    {inv.guide_details.account_number} · Branch {inv.guide_details.branch_code}
-                    {inv.guide_details.account_type ? ` · ${inv.guide_details.account_type}` : ""}
+                    {shownDetails.bank_name} · {shownDetails.account_holder} ·{" "}
+                    {shownDetails.account_number} · Branch {shownDetails.branch_code}
+                    {shownDetails.account_type ? ` · ${shownDetails.account_type}` : ""}
                   </p>
                 </div>
               ) : null}
