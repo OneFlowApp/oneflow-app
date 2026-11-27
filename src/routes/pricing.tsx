@@ -42,9 +42,12 @@ export const Route = createFileRoute("/pricing")({
     const category = typeof raw.category === "string" ? raw.category.trim().toLowerCase() : "";
     const allowed = new Set<string>(LINKABLE_PRICING_CATEGORIES);
     const renew = typeof raw.renew === "string" && /^[0-9a-f-]{36}$/i.test(raw.renew) ? raw.renew : undefined;
+    const classId =
+      typeof raw.class_id === "string" && /^[0-9a-f-]{36}$/i.test(raw.class_id) ? raw.class_id : undefined;
     return {
       category: allowed.has(category) ? (category as LinkablePricingCategory) : undefined,
       renew,
+      class_id: classId,
     };
   },
   component: PricingPage,
@@ -468,6 +471,11 @@ function PricingPage() {
       flow_points_used: String(redemption.flow_points_used),
       flow_points_discount_zar: String(redemption.flow_points_discount_zar),
     });
+    // Came from a class's booking sheet: book that class once the pass is bought.
+    if (search.class_id) {
+      successQs.set("class_id", search.class_id);
+      successQs.set("auto_book", "1");
+    }
     const body: Record<string, unknown> = {
       pack_id: packId,
       profile_id: user.id,
@@ -475,6 +483,7 @@ function PricingPage() {
       cancel_url: `${origin}/pricing`,
       promo_code: promoCode || undefined,
     };
+    if (search.class_id) body.class_id = search.class_id;
     if (addonIds && addonIds.length > 0) body.addon_ids = addonIds;
     if (redemption.flow_points_used > 0) {
       body.flow_points_used = redemption.flow_points_used;

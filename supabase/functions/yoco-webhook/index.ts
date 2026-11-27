@@ -178,6 +178,56 @@ function isSeeker(p: Product) {
 function isSage(p: Product) {
   return p.id.toLowerCase().startsWith("e8ea33ba") || p.name.toLowerCase().includes("sage");
 }
+async function autoBookClassAfterPurchase(
+  supabase: any,
+  profileId: string,
+  classId: string,
+  credits: { id: string; allowed_class_types: string[] | null }[],
+) {
+  try {
+    const { data: cls } = await supabase
+      .from("classes")
+      .select("starts_at, is_cancelled, bookings_closed, capacity, booked_count, class_type")
+      .eq("id", classId)
+      .maybeSingle();
+    if (!cls) return console.warn("yoco-webhook: auto-book class not found", classId);
+    const c = cls as any;
+    if (c.is_cancelled || c.bookings_closed) return console.warn("yoco-webhook: auto-book skipped, class closed", classId);
+    if (c.starts_at && new Date(c.starts_at).getTime() <= Date.now()) {
+      return console.warn("yoco-webhook: auto-book skipped, class started", classId);
+    }
+    if (c.capacity != null && Number(c.booked_count ?? 0) >= Number(c.capacity)) {
+      return console.warn("yoco-webhook: auto-book skipped, class full", classId);
+    }
+    const { data: existing } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("profile_id", profileId)
+      .eq("class_id", classId)
+      .neq("status", "cancelled")
+      .limit(1);
+    if (existing && existing.length > 0) return;
+    const type = String(c.class_type ?? "");
+    const credit = credits.find((r) => type && (r.allowed_class_types ?? []).includes(type));
+    if (!credit) return console.warn("yoco-webhook: auto-book skipped, pass does not cover class type", { classId, type });
+    const { error } = await supabase.from("bookings").insert({
+      profile_id: profileId,
+      class_id: classId,
+      status: "confirmed",
+      payment_method: "credit",
+      credit_id: credit.id,
+      booked_by: profileId,
+      flow_points_used: 0,
+      mat_addon: false,
+      towel_addon: false,
+      qr_token: globalThis.crypto.randomUUID(),
+    });
+    if (error && error.code !== "23505") console.error("yoco-webhook: auto-book insert failed", error);
+  } catch (e) {
+    console.error("yoco-webhook: auto-book failed", e);
+  }
+}
+
 function defaultTypesForCategory(category: string): string[] {
   const k = category.trim().toLowerCase();
   if (k === "yoga" || k === "power" || k === "mat_towel") return [...SEEKER_YOGA_TYPES];
@@ -503,10 +553,25 @@ serve(async (req) => {
     return new Response("ok", { status: 200 });
   }
 
-  const { error: insertErr } = await supabase.from("user_credits").insert(rows);
+  const { data: insertedCredits, error: insertErr } = await supabase
+    .from("user_credits")
+    .insert(rows)
+    .select("id, allowed_class_types");
   if (insertErr) {
     console.error("yoco-webhook: credit insert failed", insertErr);
     return new Response("insert failed", { status: 500 });
+  }
+
+  // Bought from a class's booking sheet: book that class now, so the loop closes even if the
+  // member lands back in a browser where they aren't signed in.
+  const bookClassId = String(metadata.class_id ?? "").trim();
+  if (bookClassId) {
+    await autoBookClassAfterPurchase(
+      supabase,
+      profileId,
+      bookClassId,
+      (insertedCredits ?? []) as { id: string; allowed_class_types: string[] | null }[],
+    );
   }
 
   const pointsUsed = Math.max(0, Math.floor(Number(metadata.flow_points_used ?? 0) || 0));

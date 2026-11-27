@@ -938,6 +938,8 @@ serve(async (req) => {
       flow_points_discount_zar:
         flowDiscountCents > 0 ? Math.round((flowDiscountCents / 100) * 100) / 100 : 0,
       billNote: packBillNote,
+      // Bought from a class's booking sheet: the webhook books that class once the pass is added.
+      class_id: !isGift && classId ? classId : "",
     },
   };
   console.log("yoco pack request:", JSON.stringify(packPayload));
