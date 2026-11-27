@@ -968,6 +968,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                     </div>
                     <Link
                       to="/pricing"
+                      search={{ class_id: session.id }}
                       className="mt-3 block text-center text-xs text-muted-foreground underline"
                     >
                       See all passes
@@ -976,7 +977,7 @@ export function BookingSheet({ session, open, onOpenChange, onBookingConfirmed }
                 ) : (
                   <div className="rounded-2xl border border-dashed border-border bg-card p-4 text-center text-sm text-muted-foreground">
                     No eligible credits for this class.{" "}
-                    <Link to="/pricing" className="text-primary underline">
+                    <Link to="/pricing" search={{ class_id: session.id }} className="text-primary underline">
                       Buy a pass
                     </Link>
                   </div>
