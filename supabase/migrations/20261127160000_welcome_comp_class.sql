@@ -2,7 +2,7 @@
 --   Given once per account, the moment onboarding is completed. Staff don't get it.
 --   Valid until the end date in studio_settings 'welcome_comp_until' (Johannesburg time, end of that day).
 --   Sign-ups after that date get nothing; change or extend the date there.
---   Which classes it covers: the "Welcome Comp Class" product's class types (Admin → Products, hidden).
+--   Covers every class type (Reformer and Wellzone included); narrow it on the hidden "Welcome Comp Class" product.
 
 insert into public.studio_settings (key, value) values ('welcome_comp_until', '2026-12-31')
 on conflict (key) do nothing;
@@ -12,8 +12,8 @@ begin
   if not exists (select 1 from public.products where name = 'Welcome Comp Class') then
     insert into public.products (name, description, category, price_zar, credit_count, validity_days,
                                  allowed_class_types, is_active, is_staff_only, is_addon, sort_order)
-    values ('Welcome Comp Class', 'Free class for new app sign-ups (not on sale)', 'yoga', 0, 1, null,
-            array['yoga', 'sculpt', 'pilates', 'power', 'beginner', 'beginner_sculpt']::class_type[],
+    values ('Welcome Comp Class', 'Free class for new app sign-ups (not on sale)', 'all_access', 0, 1, null,
+            enum_range(null::class_type),
             false, false, false, 999);
   end if;
 end $$;
