@@ -40,6 +40,31 @@ export function whatsappHelpUrl(message: unknown): string {
   return `https://wa.me/${studioDigits}?text=${encodeURIComponent(text)}`;
 }
 
+// Same error twice within 30 seconds is logged once.
+let lastLogged = { text: "", at: 0 };
+
+/** Saves the error for the daily error email. Never throws. */
+function logError(message: unknown) {
+  try {
+    const text = errorText(message);
+    const now = Date.now();
+    if (text === lastLogged.text && now - lastLogged.at < 30000) return;
+    lastLogged = { text, at: now };
+    const path = window.location.pathname.slice(0, 200);
+    void supabase
+      .from("app_errors")
+      .insert({
+        message: text.slice(0, 500),
+        path,
+        activity: activityFor(path).slice(0, 200),
+        user_agent: navigator.userAgent.slice(0, 300),
+      })
+      .then(() => undefined);
+  } catch {
+    /* logging must never get in the way */
+  }
+}
+
 /** Call once at app start. */
 export function installErrorHelp() {
   if (installed) return;
@@ -49,8 +74,9 @@ export function installErrorHelp() {
     if (d) studioDigits = d;
   });
   const original = toast.error.bind(toast);
-  toast.error = ((message: Parameters<typeof toast.error>[0], data?: Parameters<typeof toast.error>[1]) =>
-    original(message, {
+  toast.error = ((message: Parameters<typeof toast.error>[0], data?: Parameters<typeof toast.error>[1]) => {
+    logError(message);
+    return original(message, {
       duration: 10000,
       action: {
         label: "WhatsApp us",
@@ -59,5 +85,6 @@ export function installErrorHelp() {
         },
       },
       ...data,
-    })) as typeof toast.error;
+    });
+  }) as typeof toast.error;
 }
