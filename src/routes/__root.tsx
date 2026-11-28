@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "@/contexts/auth";
 import { ClassCatalogProvider } from "@/contexts/classCatalog";
 import { canEnterAdmin, landingPathFor } from "@/lib/roleAccess";
 import { captureReferrerFromSearch } from "@/lib/referral";
+import { installErrorHelp } from "@/lib/errorHelp";
 
 function CustomerBottomNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -182,6 +183,9 @@ function ProtectedOutlet() {
 }
 
 function RootComponent() {
+  useEffect(() => {
+    installErrorHelp();
+  }, []);
   return (
     <>
       <HeadContent />
