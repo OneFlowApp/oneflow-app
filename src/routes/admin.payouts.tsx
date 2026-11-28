@@ -574,9 +574,7 @@ function PayoutsPage() {
       const newId = crypto.randomUUID();
       const periodStart = new Date(`${periodRange.start}T12:00:00Z`);
       const periodEnd = new Date(`${periodRange.end}T12:00:00Z`);
-      const { data: inserted, error } = await supabase
-        .from("guide_invoices")
-        .insert({
+      const invoiceRow = {
           id: newId,
           invoice_number: invoiceNumberFor(newId, periodEnd.toISOString().slice(0, 10)),
           guide_id: me,
@@ -590,10 +588,27 @@ function PayoutsPage() {
           rates_snapshot: myRates,
           guide_details: myDetails,
           bill_to: billTo,
-        })
-        .select("id")
-        .maybeSingle();
-      if (error) throw error;
+      };
+      // On a weak phone signal the request can drop. The id is made here, so check whether it
+      // saved before trying once more: never two copies of the same invoice.
+      const insertOnce = () => supabase.from("guide_invoices").insert(invoiceRow).select("id").maybeSingle();
+      let { data: inserted, error } = await insertOnce();
+      if (error && /failed to fetch|network|load failed/i.test(String(error.message ?? ""))) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const { data: saved } = await supabase.from("guide_invoices").select("id").eq("id", newId).maybeSingle();
+        if (saved) {
+          inserted = saved;
+          error = null;
+        } else {
+          ({ data: inserted, error } = await insertOnce());
+        }
+      }
+      if (error) {
+        if (/failed to fetch|network|load failed/i.test(String(error.message ?? ""))) {
+          throw new Error("Your connection dropped and the invoice wasn't sent. Check your signal or Wi-Fi and tap Submit again.");
+        }
+        throw error;
+      }
 
       // Email full invoice breakdown to deeds@oneflow.co.za.
       const breakdown = lineItems
@@ -1434,7 +1449,7 @@ function InvoiceDetail({
   const usingFallback = Boolean(inv && !inv.guide_details && fallbackDetails);
 
   return (
-    <DialogContent className="max-w-2xl">
+    <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{inv ? `Invoice — ${inv.guideName}` : "Invoice"}</DialogTitle>
       </DialogHeader>
