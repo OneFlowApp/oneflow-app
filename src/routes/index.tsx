@@ -5,6 +5,7 @@ import { Calendar, Coffee, MapPin, QrCode } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ContinuousFlowReminder } from "@/components/ContinuousFlowReminder";
+import { WelcomeCompReminder } from "@/components/WelcomeCompReminder";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/contexts/auth";
 import { movementChallengeTotalDays } from "@/lib/movementChallenge";
@@ -126,6 +127,7 @@ function HomePage() {
       <main className="relative flex-1 space-y-5 px-5 pt-6">
         <NotificationBell className="absolute right-5 top-3" />
         <ContinuousFlowReminder />
+        <WelcomeCompReminder />
         <h1 className="px-10 text-center font-display text-[44px] font-bold leading-tight tracking-tight">
           {welcomeTitle}
         </h1>
