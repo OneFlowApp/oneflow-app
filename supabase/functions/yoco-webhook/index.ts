@@ -228,6 +228,34 @@ async function autoBookClassAfterPurchase(
   }
 }
 
+/** Yoco took the money but the pass couldn't be added: log it, which emails the studio at once. */
+async function alertPaidNoPass(
+  supabase: any,
+  profileId: string,
+  message: string,
+  info: { packId: string; paymentId: string; metadata: Record<string, unknown>; error?: string },
+) {
+  try {
+    const amount = Number(info.metadata?.amount_paid_zar);
+    await supabase.from("app_errors").insert({
+      kind: "payment",
+      profile_id: profileId || null,
+      message,
+      path: "yoco-webhook",
+      activity: "buy a pass (payment went through)",
+      details: {
+        "Money taken": "Yes",
+        "Amount": Number.isFinite(amount) && amount > 0 ? `R${amount.toFixed(2)}` : "",
+        "Pack id": info.packId,
+        "Yoco payment": info.paymentId,
+        "Technical error": info.error ?? "",
+      },
+    });
+  } catch (e) {
+    console.error("yoco-webhook: could not log payment alert", e);
+  }
+}
+
 function defaultTypesForCategory(category: string): string[] {
   const k = category.trim().toLowerCase();
   if (k === "yoga" || k === "power" || k === "mat_towel") return [...SEEKER_YOGA_TYPES];
@@ -434,10 +462,12 @@ serve(async (req) => {
     .maybeSingle();
   if (packErr) {
     console.error("yoco-webhook: product lookup failed", packErr);
+    await alertPaidNoPass(supabase, profileId, "Couldn't look up the pass that was paid for", { packId, paymentId, metadata, error: packErr.message });
     return new Response("lookup failed", { status: 500 });
   }
   if (!pack) {
     console.error("yoco-webhook: paid for a product that does not exist", packId);
+    await alertPaidNoPass(supabase, profileId, "Paid for a pass that no longer exists", { packId, paymentId, metadata });
     return new Response("ok", { status: 200 });
   }
 
@@ -528,6 +558,7 @@ serve(async (req) => {
     });
     if (giftErr) {
       console.error("yoco-webhook: gift insert failed", giftErr);
+      await alertPaidNoPass(supabase, profileId, "Couldn't save a gifted pass", { packId, paymentId, metadata, error: giftErr.message });
       return new Response("insert failed", { status: 500 });
     }
     // A Longkloof & Green Point pack bought as a gift: tell deeds@ now (the friend claims it later).
@@ -559,6 +590,7 @@ serve(async (req) => {
     .select("id, allowed_class_types");
   if (insertErr) {
     console.error("yoco-webhook: credit insert failed", insertErr);
+    await alertPaidNoPass(supabase, profileId, "Couldn't add the pass after payment", { packId, paymentId, metadata, error: insertErr.message });
     return new Response("insert failed", { status: 500 });
   }
 

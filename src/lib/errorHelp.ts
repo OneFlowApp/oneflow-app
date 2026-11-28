@@ -65,10 +65,72 @@ function logError(message: unknown) {
   }
 }
 
+/** A payment the app couldn't start because of our side: logged as 'payment', which emails at once. */
+function logPaymentFailure(message: string, details: Record<string, string>) {
+  try {
+    const path = window.location.pathname.slice(0, 200);
+    void supabase
+      .from("app_errors")
+      .insert({
+        kind: "payment",
+        message: message.slice(0, 500),
+        path,
+        activity: activityFor(path).slice(0, 200),
+        user_agent: navigator.userAgent.slice(0, 300),
+        details: { "Money taken": "No", ...details },
+      })
+      .then(() => undefined);
+  } catch {
+    /* logging must never get in the way */
+  }
+}
+
+/**
+ * Watch every call to the checkout function. Failures that are ours (couldn't reach it, it crashed,
+ * or Yoco refused to open a payment) are reported. Normal "no" answers (class full, already booked)
+ * come back with a message and are not.
+ */
+function watchCheckout() {
+  const proto = Object.getPrototypeOf(supabase.functions) as {
+    invoke: (name: string, opts?: { body?: unknown }) => Promise<{ data: unknown; error: unknown }>;
+  };
+  if (!proto?.invoke || (proto as { __watched?: boolean }).__watched) return;
+  (proto as { __watched?: boolean }).__watched = true;
+  const original = proto.invoke;
+  proto.invoke = async function (this: unknown, name: string, opts?: { body?: unknown }) {
+    const result = await original.call(this, name, opts);
+    if (name !== "yoco-checkout") return result;
+    try {
+      const body = (opts?.body ?? {}) as Record<string, unknown>;
+      const what = String(body.pack_id ?? body.invite_id ?? body.pause_id ?? (body.fee_ids ? "fees" : ""));
+      const err = result.error as { name?: string; message?: string; context?: { status?: number } } | null;
+      if (err) {
+        const status = Number(err.context?.status ?? 0);
+        const ours = err.name === "FunctionsFetchError" || err.name === "FunctionsRelayError" || status >= 500;
+        if (ours) {
+          logPaymentFailure(`Checkout failed: ${err.message ?? "no response"}${status ? ` (${status})` : ""}`, {
+            "Paying for": what,
+          });
+        }
+      } else {
+        const data = (result.data ?? {}) as Record<string, unknown>;
+        if (!data.redirectUrl && !data.error) {
+          const yocoMsg = String(data.message ?? data.displayMessage ?? data.description ?? "").slice(0, 200);
+          logPaymentFailure(`Yoco didn't open a payment${yocoMsg ? `: ${yocoMsg}` : ""}`, { "Paying for": what });
+        }
+      }
+    } catch {
+      /* never get in the way of the payment */
+    }
+    return result;
+  };
+}
+
 /** Call once at app start. */
 export function installErrorHelp() {
   if (installed) return;
   installed = true;
+  watchCheckout();
   void supabase.rpc("studio_whatsapp_number").then(({ data }) => {
     const d = whatsappDigits(typeof data === "string" ? data : null);
     if (d) studioDigits = d;
