@@ -540,6 +540,21 @@ function BookingsPage() {
         }
       />
 
+      <div className="mb-2 flex justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isSameDay(selectedDay, today)}
+          onClick={() => {
+            setViewWeekStart(startOfCalendarWeekSunday(today));
+            setSelectedDay(today);
+          }}
+        >
+          Today
+        </Button>
+      </div>
+
       <WeekDayStrip
         className="mb-3"
         days={stripDays.map((d) => ({
